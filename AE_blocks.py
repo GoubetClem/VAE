@@ -1,82 +1,66 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Layer
+from tensorflow.keras import Model, Input
 
-class NNBlock(tf.keras.layers.Layer):
+def NNBlock_model(input_dims, NN_dims, activation="relu", name="NN"):
+    x_inputs = Input(shape=(input_dims,), name="input_"+name)
+    x = x_inputs
+    for idx, layer_dim in enumerate(NN_dims):
+        x = Dense(units=layer_dim, activation=activation,
+                       name=name + "_dense_{}".format(idx))(x)
 
-    def __init__(self, NN_dims, name_block="NN", activation="relu"):
+    return Model(inputs=x_inputs, outputs=x, name=name)
 
-        super(NNBlock, self).__init__()
-        self.NN_dims = NN_dims
-        self.name_block = name_block
-        self.activation = activation
 
-    def call(self, inputs):
-        for  idx, layer_dim in enumerate(self.NN_dims):
-            inputs = Dense(units=layer_dim, activation=self.activation,
-                           name=self.name_block+"_dense_{}".format(idx))(inputs)
-            return inputs
+def NNBlockCond_model(input_dims, cond_dims, NN_dims, activation="relu", name="NN"):
+    x_inputs = Input(shape=(input_dims,), name="input_" + name)
+    cond_inputs = Input(shape=(cond_dims,), name="cond_input_" + name)
 
-class NNBlockCond(Layer):
+    x = concatenate([x_inputs, cond_inputs])
 
-    def __init__(self, NN_dims, name_block="NN", activation="relu"):
-        super(NNBlockCond, self).__init__()
-        self.NN_dims = NN_dims
-        self.name_block = name_block
-        self.activation = activation
+    for idx, layer_dim in enumerate(NN_dims):
+        x = concatenate([Dense(units=layer_dim, activation=activation)(x), cond_inputs],
+                             name=name + "_dense_cond_{}".format(idx))
 
-    def call(self, inputs, cond_inputs):
-        for idx, layer_dim in enumerate(self.NN_dims):
-            inputs = concatenate([Dense(units=layer_dim, activation=self.activation)(inputs), cond_inputs],
-                                name=self.name_block+"_dense_cond_{}".format(idx))
-            return inputs
+    return Model(inputs=[x_inputs, cond_inputs], outputs=x, name=name)
 
-class ResnetBlock(Layer):
+def InceptionBlock_model(input_dims, NN_dims, activation="relu", name="NN"):
+    x_inputs = Input(shape=(input_dims,), name="input_" + name)
+    x = x_inputs
+    for idx, layer_dim in enumerate(NN_dims):
+        x = concatenate([Dense(units=layer_dim, activation=activation)(x), x],
+                             name=name + "_dense_inception_{}".format(idx))
 
-    def __init__(self, NN_dims, name_block="NN", activation="relu"):
-        super(ResnetBlock, self).__init__()
-        self.NN_dims = NN_dims
-        self.name_block = name_block
-        self.activation = activation
+    return Model(inputs=x_inputs, outputs=x, name=name)
 
-    def call(self, inputs):
-        for  idx, layer_dim in enumerate(self.NN_dims):
-            inputs = concatenate([Dense(units=layer_dim, activation=self.activation)(inputs), inputs],
-                                 name=self.name_block + "_dense_resnet_{}".format(idx))
-            return inputs
+def EmbeddingBlock_model(input_dims, emb_dims, latent_dims, has_BN=False, activation="relu", name="NN"):
+    embeddings = []
+    cond_inputs= []
 
-class EmbeddingBlock(Layer):
+    for i, cond_d in enumerate(input_dims):
+        c_inputs = Inputs(shape=(cond_d,), name = "input_cond_{}".format(i))
+        cond_inputs.append(c_inputs)
+        if emb_dims[i] == []:
+            embeddings.append(c_inputs)
+        else:
+            first_emb = NNBlock_model(NN_dims=emb_dims[i], name=name + "cond_{}".format(i))
+            embeddings.append(first_emb(c_inputs))
 
-    def __init__(self, emb_dims, latent_dims, activation="relu", name_block="NN", has_BN=True):
-        super(EmbeddingBlock, self).__init__()
-        self.emb_dims = emb_dims
-        self.latent_dims = latent_dims
-        self.activation = activation
-        self.name_block = name_block
-        self.has_BN = has_BN
+    concat_cond = concatenate(embeddings, name=name + "_emb_concat")
 
-    def call(self, cond_inputs):
-        embeddings = []
+    last_emb = Dense(units=latent_dims, activation=activation, name=name + "_last_reduction")(
+        concat_cond)
 
-        for i, cond in enumerate(cond_inputs):
-            if self.emb_dims[i] == 0:
-                embeddings.append(cond)
-            else:
-                first_emb = NNBlock(NN_dims=self.emb_dims[i], name=self.name_block+"cond_{}".format(i))
-                embeddings.append(first_emb(cond))
+    if has_BN:
+        last_emb = BatchNormalization()(last_emb)
 
-        concat_cond = concatenate(embeddings, name=self.name_block+"_emb_concat")
+    return Model(inputs=cond_inputs, outputs=last_emb, name=name)
 
-        last_emb = Dense(units=self.latent_dims, activation = self.activation, name=self.name_block+"_last_reduction")(concat_cond)
 
-        if self.has_BN:
-            last_emb = BatchNormalization()(last_emb)
+@tf.function
+def GaussianSampling(inputs):
+    """Uses (z_mean, z_log_var) to sample z, the vector encoding the profil."""
 
-        return last_emb
-
-class GaussianSampling(Layer):
-  """Uses (z_mean, z_log_var) to sample z, the vector encoding the profil."""
-
-  def call(self, inputs):
     z_mean, z_log_var = inputs
     batch = tf.shape(z_mean)[0]
     dim = tf.shape(z_mean)[1]

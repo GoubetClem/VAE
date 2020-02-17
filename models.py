@@ -30,6 +30,7 @@ class AE_Model(ABC):
             os.mkdir(self.folder)
 
         self.model = None
+        self.blocks=[]
 
     @abstractmethod
     def build_model(self, *args, **kwargs):
@@ -61,7 +62,7 @@ class AE_Model(ABC):
 
         folder = os.path.join(out_dir)
 
-        for block in ["encoder", "decoder", "model"]:
+        for block in self.blocks:
             filepath = os.path.join(folder, "%s.hdf5" %(block))
             getattr(self, block).save(filepath = filepath)
 
@@ -71,7 +72,7 @@ class AE_Model(ABC):
 
         folder = os.path.join(out_dir)
 
-        for block in ["encoder", "decoder", "model"]:
+        for block in self.blocks:
             filepath = os.path.join(folder, "%s.hdf5" %(block))
             getattr(self, block).load_weights(filepath = filepath)
 
@@ -101,50 +102,45 @@ class CAE(AE_Model):
         :return:
         """
 
+        #getting the inputs
         x_inputs = Input(shape=(input_dims,), name="x_inputs")
-        c_inputs=[]
+        c_inputs = []
+
+        for i, c_dims in enumerate(self.cond_dims):
+            c_inputs.append(Input(shape=(c_dims,), name="cond_inputs_{}".format(i)))
 
         inputs = [x_inputs] + c_inputs
 
-        # Getting the inputs
-        for i,c_dims in enumerate(self.cond_dims):
-            c_inputs.append(Input(shape=(c_dims,), name="cond_inputs_{}".format(i)))
-
         # Creation of the encoder block
         if len(c_inputs)==0:
-            encoder_block = NNBlock(NN_dims=encoder_dims, name_block="encoder_block", activation="relu")
+            encoder_block = NNBlock_model(input_dims, NN_dims=encoder_dims, name="encoder_block", activation="relu")
             enc_x = encoder_block(x_inputs)
         else:
             if self.with_embedding:
-                embedding_block =  EmbeddingBlock(self.emb_dims, latent_dims, activation="relu", name_block="emb", has_BN=True)
-                cond_inputs = embedding_block(c_inputs)
+                self.to_embedding=  EmbeddingBlock_model(self.cond_dims, self.emb_dims, latent_dims, activation="relu", name="emb", has_BN=True)
+                cond_enc_inputs = self.to_embedding(c_inputs)
             else:
-                cond_inputs = concatenate(c_inputs, name="concat_cond")
+                cond_enc_inputs = concatenate(c_inputs, name="concat_cond")
 
-            encoder_block = NNBlockCond(NN_dims=encoder_dims, name_block="encoder_block", activation="relu")
-            enc_x = encoder_block(x_inputs, cond_inputs)
+            encoder_block = NNBlockCond_model(input_dims, self.cond_dims, NN_dims=encoder_dims, name="encoder_block", activation="relu")
+            enc_x = encoder_block([x_inputs, cond_enc_inputs])
 
-        z_mu = Dense(units=latent_dims, activation='linear', name="latent_dense_mu")(enc_x)
+        enc_outputs = Dense(units=latent_dims, activation='linear', name="latent_dense_mu")(enc_x)
 
-        if self.with_embedding:
-            self.to_embedding = Model(inputs = [c_inputs], outputs=[cond_inputs], name="cond_embedding")
-            self.to_embedding.summary()
-
-        self.encoder = Model(inputs=inputs, outputs=[z_mu], name="encoder")
-        self.encoder.summary()
+        self.encoder = Model(inputs=inputs, outputs=enc_outputs, name="encoder")
 
         # creation of the decoder block
-        z_inputs = Input(shape=(latent_dims,), name="z_inputs")
-        decoder_block = ResnetBlock(NN_dims=decoder_dims, name_block="decoder_block", activation="relu")
-        dec_x = decoder_block(z_inputs)
-        dec_output = Dense(input_dims, activation='linear', name='dec_output')(dec_x)
+        dec_inputs = Input(shape=(latent_dims,), name="dec_inputs")
+        decoder_block = InceptionBlock_model(latent_dims, NN_dims=decoder_dims, name="decoder_block", activation="relu")
+        dec_x = decoder_block(dec_inputs)
+        dec_outputs = Dense(input_dims, activation='linear', name='dec_output')(dec_x)
+        self.decoder = Model(inputs=dec_inputs, outputs=dec_outputs, name="decoder")
 
-        self.decoder = Model(inputs=[z_inputs], outputs=[dec_output], name="decoder")
-        self.decoder.summary()
-        #Models settings
-        x_hat = self.decoder(z_mu)
-        self.model = Model(inputs=inputs, outputs=[x_hat], name="cae")
+        #Model AE settings
+        x_hat = self.decoder(enc_outputs)
+        self.model = Model(inputs=inputs, outputs=x_hat, name="cae")
         self.model.summary()
+        self.blocks.append("model")
 
         optimizer = optimizers.Adam(lr=self.lr)
         if self.is_L2_Loss:
@@ -152,3 +148,16 @@ class CAE(AE_Model):
         else:
             loss = "mae"
         self.model.compile(loss=loss, optimizer=optimizer, experimental_run_tf_function=False)
+
+        #Blocks callers
+
+        if self.with_embedding:
+            self.to_embedding.summary()
+            self.blocks.append("to_embedding")
+
+        self.encoder.summary()
+        self.blocks.append("encoder")
+
+        self.decoder.summary()
+        self.blocks.append("decoder")
+
