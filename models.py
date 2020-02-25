@@ -91,6 +91,7 @@ class CAE(AE_Model):
         if with_embedding:
             self.emb_dims = kwargs["emb_dims"]
 
+
     def build_model(self, input_dims, latent_dims, encoder_dims=[24], decoder_dims=[24], **kwargs):
         """
 
@@ -112,32 +113,20 @@ class CAE(AE_Model):
         inputs = [x_inputs] + c_inputs
 
         # Creation of the encoder block
-        if len(c_inputs)==0:
-            encoder_block = NNBlock_model(input_dims, NN_dims=encoder_dims, name="encoder_block", activation="relu")
-            enc_x = encoder_block(x_inputs)
-        else:
-            if self.with_embedding:
-                self.to_embedding=  EmbeddingBlock_model(self.cond_dims, self.emb_dims, latent_dims, activation="relu", name="emb", has_BN=True)
-                cond_enc_inputs = self.to_embedding(c_inputs)
-            else:
-                cond_enc_inputs = concatenate(c_inputs, name="concat_cond")
+        self.encoder = encoder_model(self, type="NNBlockCond_model", input_dims=input_dims, latent_dims=latent_dims,
+                                     encoder_dims=encoder_dims, number_outputs=1)
 
-            encoder_block = NNBlockCond_model(input_dims, self.cond_dims, NN_dims=encoder_dims, name="encoder_block", activation="relu")
-            enc_x = encoder_block([x_inputs, cond_enc_inputs])
+        self.decoder = decoder_model(self, type="InceptionBlock_model", input_dims=input_dims, latent_dims=latent_dims,
+                                     decoder_dims=decoder_dims)
 
-        enc_outputs = Dense(units=latent_dims, activation='linear', name="latent_dense_mu")(enc_x)
 
-        self.encoder = Model(inputs=inputs, outputs=enc_outputs, name="encoder")
-
-        # creation of the decoder block
-        dec_inputs = Input(shape=(latent_dims,), name="dec_inputs")
-        decoder_block = InceptionBlock_model(latent_dims, NN_dims=decoder_dims, name="decoder_block", activation="relu")
-        dec_x = decoder_block(dec_inputs)
-        dec_outputs = Dense(input_dims, activation='linear', name='dec_output')(dec_x)
-        self.decoder = Model(inputs=dec_inputs, outputs=dec_outputs, name="decoder")
 
         #Model AE settings
-        x_hat = self.decoder(enc_outputs)
+        enc_outputs = self.encoder(inputs)
+
+        dec_inputs = [enc_outputs] + c_inputs
+
+        x_hat = self.decoder(dec_inputs)
         self.model = Model(inputs=inputs, outputs=x_hat, name="cae")
         self.model.summary()
         self.blocks.append("model")
