@@ -1,34 +1,23 @@
 from abc import ABC, abstractmethod
 import os
+import pickle
 import matplotlib.pyplot as plt
-import tensorflow as tf
-from tensorflow.keras import backend as K
-from tensorflow.keras import Model, Input
 
-from tensorflow.keras import optimizers
+from tensorflow.keras.layers import Lambda
 
 from AE_blocks import *
 
+
 class AE_Model(ABC):
 
-    @abstractmethod
-    def __init__(self, **kwargs):
+    def __init__(self, VAE_params):
         """
 
         """
+        assert ("name" in VAE_params.__dict__.keys())
+        assert ("folder" in VAE_params.__dict__.keys())
 
-        if "name" not in kwargs:
-            raise Exception('Please specify model name!')
-
-        self.name = kwargs["name"]
-
-        if "out_dir" not in kwargs:
-            raise Exception('Please specify model savings folder path')
-
-        self.folder = os.path.join(kwargs["out_dir"], self.name)
-        if not os.path.isdir(self.folder):
-            os.mkdir(self.folder)
-
+        self.VAE_params = VAE_params
         self.model = None
         self.blocks=[]
 
@@ -57,51 +46,134 @@ class AE_Model(ABC):
 
     def save(self, out_dir=None):
         if out_dir is None:
-            out_dir = self.folder
-            out_dir = self.folder
+            out_dir = self.VAE_params.folder
 
-        folder = os.path.join(out_dir)
+        folder = os.path.join(out_dir, "model")
+        if not os.path.isdir(folder):
+            os.mkdir(folder)
 
         for block in self.blocks:
             filepath = os.path.join(folder, "%s.hdf5" %(block))
             getattr(self, block).save(filepath = filepath)
 
-    def load_weights(self, out_dir = None):
-        if out_dir is None:
-            out_dir = self.folder
+        with open(self.VAE_params.name+'_model_architecture', 'wb') as config_model_file:
+            pickle.dump(self.VAE_params.model_params.__dict__, config_model_file)
 
-        folder = os.path.join(out_dir)
+    def load_weights(self, out_dir = None, retrieve_model_architecture=True):
+        if out_dir is None:
+            out_dir = self.VAE_params.folder
+
+        folder = os.path.join(out_dir, "model")
+
+        if retrieve_model_architecture:
+            with open(self.VAE_params.name + '_model_architecture', 'rb') as config_model_file:
+                self.VAE_params.model_params = pickle.load(config_model_file)
+
+            self.VAE_params.set_training_params()
+
+            self.build_model(self, self.VAE_params)
 
         for block in self.blocks:
             filepath = os.path.join(folder, "%s.hdf5" %(block))
             getattr(self, block).load_weights(filepath = filepath)
 
-class CAE(AE_Model):
 
-    def __init__(self, cond_dims=[], with_embedding=False, is_L2_Loss=True, lr=0.001, **kwargs):
+class CVAE(AE_Model):
+
+    def __init__(self, VAE_params):
+        AE_Model.__init__(self, VAE_params = VAE_params)
+
+    def build_model(self, VAE_params, custom_encoder_model=None, custom_decoder_model=None):
+        self.VAE_params.model_params = VAE_params.model_params
+
+        # getting the graph inputs
+        x_inputs = Input(shape=(self.VAE_params.model_params.input_dims,), name="x_inputs")
+        c_inputs = []
+
+        for i, c_dims in enumerate(self.VAE_params.model_params.cond_dims):
+            c_inputs.append(Input(shape=(c_dims,), name="cond_inputs_{}".format(i)))
+
+        inputs = [x_inputs] + c_inputs
+
+        # Setting the AE architecture
+        if custom_encoder_model is not None:
+            self.encoder = custom_encoder_model
+        else:
+            self.encoder = build_encoder_model(self, model_params=self.VAE_params.model_params)
+
+        if custom_decoder_model is not None:
+            self.decoder = custom_decoder_model
+        else:
+            self.decoder = build_decoder_model(self, model_params=self.VAE_params.model_params)
+
+        # Model AE graph
+        enc_outputs = self.encoder(inputs)
+
+        if self.VAE_params.model_params.nb_latent_components ==1:
+            dec_inputs = enc_outputs + c_inputs
+        else:
+            z = Lambda(self.VAE_params.model_params.reparametrize, name="reparametrizing_layer")(enc_outputs)
+            dec_inputs = [z] + c_inputs
+
+        x_hat = self.decoder(dec_inputs)
+
+        self.model = Model(inputs=inputs, outputs=x_hat, name="cae")
+        self.model.summary()
+        self.blocks.append("model")
+
+        if self.VAE_params.model_params.with_embedding:
+            self.to_embedding.summary()
+            self.blocks.append("to_embedding")
+
+        self.encoder.summary()
+        self.blocks.append("encoder")
+
+        self.decoder.summary()
+        self.blocks.append("decoder")
+
+        # Training objectives settings
+        optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
+        model_loss = self.VAE_params.training_params.loss(latent_components = enc_outputs,
+                                                    latent_sampling = dec_inputs[0], cond_inputs = c_inputs)
+
+        self.model.compile(loss=model_loss, optimizer=optimizer, experimental_run_tf_function=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"""
+
+
+class old_CAE(AE_Model):
+
+    def __init__(self, cond_dims=[], with_embedding=False, **kwargs):
         AE_Model.__init__(self, **kwargs)
         self.cond_dims = cond_dims
         self.with_embedding = with_embedding
-        self.is_L2_Loss = is_L2_Loss
-        self.lr = lr
 
         if with_embedding and "emb_dims" not in kwargs:
             raise Exception('Please specify embeddings layers dimensions!')
 
+
         if with_embedding:
+            assert len(kwargs["emb_dims"]) == len(cond_dims) + 1
             self.emb_dims = kwargs["emb_dims"]
 
 
-    def build_model(self, input_dims, latent_dims, encoder_dims=[24], decoder_dims=[24], **kwargs):
-        """
-
-        :param input_dims:
-        :param latent_dims:
-        :param encoder_dims:
-        :param decoder_dims:
-        :param kwargs:
-        :return:
-        """
+    def build_model(self, input_dims, latent_dims, encoder_dims=[24], encoder_type="NNBlockCond_model",
+                    decoder_dims=[24], decoder_type="InceptionBlock_model", **kwargs):
 
         #getting the inputs
         x_inputs = Input(shape=(input_dims,), name="x_inputs")
@@ -113,13 +185,11 @@ class CAE(AE_Model):
         inputs = [x_inputs] + c_inputs
 
         # Creation of the encoder block
-        self.encoder = encoder_model(self, type="NNBlockCond_model", input_dims=input_dims, latent_dims=latent_dims,
+        self.encoder = encoder_model(self, type=encoder_type, input_dims=input_dims, latent_dims=latent_dims,
                                      encoder_dims=encoder_dims, number_outputs=1)
 
-        self.decoder = decoder_model(self, type="InceptionBlock_model", input_dims=input_dims, latent_dims=latent_dims,
+        self.decoder = decoder_model(self, type=decoder_type, input_dims=input_dims, latent_dims=latent_dims,
                                      decoder_dims=decoder_dims)
-
-
 
         #Model AE settings
         enc_outputs = self.encoder(inputs)
@@ -131,14 +201,55 @@ class CAE(AE_Model):
         self.model.summary()
         self.blocks.append("model")
 
-        optimizer = optimizers.Adam(lr=self.lr)
-        if self.is_L2_Loss:
-            loss="mse"
-        else:
-            loss = "mae"
-        self.model.compile(loss=loss, optimizer=optimizer, experimental_run_tf_function=False)
+        if self.with_embedding:
+            self.to_embedding.summary()
+            self.blocks.append("to_embedding")
 
-        #Blocks callers
+        self.encoder.summary()
+        self.blocks.append("encoder")
+
+        self.decoder.summary()
+        self.blocks.append("decoder")
+
+    def build_objectives(self, lr=3e-4, recon_loss="mae"):
+
+        optimizer = optimizers.Adam(lr=lr)
+
+        self.model.compile(loss=recon_loss, optimizer=optimizer, experimental_run_tf_function=False)
+
+
+class old_CVAE(old_CAE):
+
+    def build_model(self, input_dims, latent_dims, encoder_dims=[24], encoder_type="NNBlockCond_model",
+                    decoder_dims=[24], decoder_type="InceptionBlock_model", **kwargs):
+
+        # getting the inputs
+        x_inputs = Input(shape=(input_dims,), name="x_inputs")
+        c_inputs = []
+
+        for i, c_dims in enumerate(self.cond_dims):
+            c_inputs.append(Input(shape=(c_dims,), name="cond_inputs_{}".format(i)))
+
+        inputs = [x_inputs] + c_inputs
+
+        # Creation of the encoder block
+        self.encoder = encoder_model(self, type=encoder_type, input_dims=input_dims, latent_dims=latent_dims,
+                                     encoder_dims=encoder_dims, number_outputs=2)
+
+        self.decoder = decoder_model(self, type=decoder_type, input_dims=input_dims, latent_dims=latent_dims,
+                                     decoder_dims=decoder_dims)
+
+        #Model AE settings
+        z_mu, z_log_sigma = self.encoder(inputs)
+
+        z = Lambda(GaussianSampling, name="reparametrizing_layer")([z_mu, z_log_sigma])
+
+        dec_inputs = [z] + c_inputs
+
+        x_hat = self.decoder(dec_inputs)
+        self.model = Model(inputs=inputs, outputs=x_hat, name="cvae")
+        self.model.summary()
+        self.blocks.append("model")
 
         if self.with_embedding:
             self.to_embedding.summary()
@@ -150,3 +261,18 @@ class CAE(AE_Model):
         self.decoder.summary()
         self.blocks.append("decoder")
 
+    def build_objectives(self, lr=3e-4, recon_loss="mae", loss_weights={"recon_loss" : 1.}, **kwargs):
+
+        optimizer = optimizers.Adam(lr=lr)
+        self.vae_loss = VAE_Loss(recon_loss=recon_loss, loss_weights=loss_weights, **kwargs)
+
+        model_loss = self.vae_loss(latent_mu = self.model.get_layer("latent_dense_0").output,
+                                   latent_log_sigma=self.model.get_layer("latent_dense_1").output,
+                                   latent_sampling=self.model.get_layer("reparametrizing_layer").output,
+                                   **kwargs)
+
+        self.model.compile(loss=model_loss, optimizer=optimizer, experimental_run_tf_function=False)
+
+
+
+"""

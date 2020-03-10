@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Layer
+from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Activation
 from tensorflow.keras import Model, Input
 from tensorflow.keras import backend as K
 
@@ -45,6 +45,7 @@ class AE_blocks():
         return Model(inputs=[x_inputs] + cond_inputs, outputs=x, name=self.name)
     # TODO TargetNNBlockCond et Conv1D starting block
 
+
     def InceptionBlock_model(self, cond_dims, **kwargs):
         x_inputs = Input(shape=(self.input_dims,), name="input_" + self.name)
         x = x_inputs
@@ -61,82 +62,102 @@ class AE_blocks():
 
         return Model(inputs=[x_inputs] + cond_inputs, outputs=x, name=self.name)
 
-def EmbeddingBlock_model(self, input_dims, emb_dims, latent_dims, has_BN=False, activation="relu", name="NN"):
+
+def EmbeddingBlock_model(input_dims, emb_dims, has_BN=False, activation="relu", name="NN_emb"):
     embeddings = []
+    not_to_emb =[]
     cond_inputs= []
 
     for i, cond_d in enumerate(input_dims):
-        c_inputs = Input(shape=(cond_d,), name = "input_cond_{}".format(i))
+        c_inputs = Input(shape=(cond_d,), name = "emb_input_cond_{}".format(i))
         cond_inputs.append(c_inputs)
-        if emb_dims[i] == []:
-            embeddings.append(c_inputs)
+        if len(emb_dims[i]) == 0:
+            not_to_emb.append(c_inputs)
         else:
-            first_emb = AE_blocks(NN_dims=emb_dims[i], type="NNBlock_model", name=name + "cond_{}".format(i))
-            embeddings.append(first_emb(c_inputs))
+            first_emb = AE_blocks(input_dims=cond_d, NN_dims=emb_dims[i], type="NNBlock_model",
+                                  name=name + "cond_{}".format(i))
+            emb_cond = first_emb(c_inputs)
+            if has_BN:
+                emb_cond = BatchNormalization()(emb_cond)
+            embeddings.append(emb_cond)
 
-    concat_cond = concatenate(embeddings, name=name + "_emb_concat")
+    all_embs = concatenate(embeddings, name=name + "_emb_concat")
 
-    last_emb = Dense(units=latent_dims, activation=activation, name=name + "_last_reduction")(
-        concat_cond)
+    last_emb = Dense(units=emb_dims[-1], activation=None, name=name + "_last_reduction")(all_embs)
 
     if has_BN:
         last_emb = BatchNormalization()(last_emb)
 
-    return Model(inputs=cond_inputs, outputs=last_emb, name=name)
+    emb_outputs = Activation(activation)(last_emb)
 
-def encoder_model(self, type, input_dims, latent_dims, encoder_dims=[24], number_outputs=1, **kwargs):
+    if len(not_to_emb) != 0:
+        emb_outputs = concatenate([emb_outputs] + not_to_emb)
 
-    x_inputs = Input(shape=(input_dims,), name="x_inputs")
+    return Model(inputs=cond_inputs, outputs=emb_outputs, name=name)
+
+
+def build_encoder_model(self, model_params):
+
+    x_inputs = Input(shape=(model_params.input_dims,), name="enc_inputs")
     c_inputs = []
-    enc_outputs=[]
+    enc_block_outputs=[]
+    for i in tf.range(0, model_params.nb_latent_components, 1):
+        enc_block_outputs.append([])
     cond_enc_inputs_dims=[]
 
-    for i, c_dims in enumerate(self.cond_dims):
-        c_inputs.append(Input(shape=(c_dims,), name="cond_inputs_{}".format(i)))
+    for i, c_dims in enumerate(model_params.cond_dims):
+        c_inputs.append(Input(shape=(c_dims,), name="enc_cond_inputs_{}".format(i)))
 
     inputs = [x_inputs] + c_inputs
 
     # Creation of the encoder block
-    if self.with_embedding:
-        self.to_embedding = EmbeddingBlock_model(input_dims=self.cond_dims, emb_dims=self.emb_dims,
-                                                 latent_dims=latent_dims, activation="relu",
-                                                 name="emb", has_BN=True)
-        cond_enc_inputs = self.to_embedding(c_inputs)
-        cond_enc_inputs_dims.append(latent_dims)
+    if len(c_inputs)>=1:
+        if model_params.with_embedding:
+            self.to_embedding = EmbeddingBlock_model(input_dims=model_params.cond_dims, emb_dims=model_params.emb_dims,
+                                               activation="relu",name="emb", has_BN=False)
+            cond_enc_inputs = self.to_embedding(c_inputs)
+        else:
+            if len(c_inputs) >=2:
+                cond_enc_inputs = concatenate(c_inputs, name="concat_cond")
+            else:
+                cond_enc_inputs = c_inputs
+
+        cond_enc_inputs_dims.append(K.int_shape(cond_enc_inputs[0])[-1])
         enc_inputs = [x_inputs, cond_enc_inputs]
-    elif len(self.cond_dims) >= 2:
-        cond_enc_inputs = concatenate(c_inputs, name="concat_cond")
-        cond_enc_inputs_dims.append(K.int_shape(cond_enc_inputs)[-1])
-        enc_inputs = [x_inputs, cond_enc_inputs]
-    elif len(self.cond_dims) == 1:
-        cond_enc_inputs_dims.append(K.int_shape(c_inputs[0])[-1])
-        enc_inputs = [x_inputs, c_inputs]
     else:
         enc_inputs = [x_inputs]
 
-    encoder_block = AE_blocks(input_dims=input_dims, cond_dims=cond_enc_inputs_dims, type=type, NN_dims=encoder_dims,
-                              name="encoder_block", activation="relu")
-    enc_x = encoder_block(enc_inputs)
+    for idx in tf.range(0, model_params.nb_encoder_ensemble,1):
+        encoder_block = AE_blocks(input_dims=model_params.input_dims, cond_dims=cond_enc_inputs_dims,
+                                  type=model_params.encoder_type, NN_dims=model_params.encoder_dims,
+                                  name="encoder_block_{}".format(idx), activation="relu")
+        enc_x = encoder_block(enc_inputs)
 
-    for i in tf.range(0, number_outputs, 1):
-        enc_outputs.append(Dense(units=latent_dims, activation='linear', name="latent_dense_{}".format(i+1))(enc_x))
+        for i in tf.range(0, model_params.nb_latent_components, 1):
+            enc_block_outputs[i].append(Dense(units=latent_dims, activation='linear',
+                                     name="latent_dense_{}_{}".format(idx, i+1))(enc_x))
+
+    enc_outputs=[]
+    for i in tf.range(0, model_params.nb_latent_components, 1):
+        enc_outputs.append(concatenate(enc_bloc_outputs[i]))
 
     return Model(inputs=inputs, outputs=enc_outputs, name="encoder")
+    #TODO block mixture et non mixture
 
-def decoder_model(self, type, input_dims, latent_dims, decoder_dims=[24], **kwargs):
+def build_decoder_model(self, type, input_dims, latent_dims, decoder_dims=[24], **kwargs):
 
     encoded_inputs = Input(shape=(latent_dims,), name="encoded_inputs")
     c_inputs = []
     cond_dec_inputs_dims = []
 
     for i, c_dims in enumerate(self.cond_dims):
-        c_inputs.append(Input(shape=(c_dims,), name="cond_inputs_{}".format(i)))
+        c_inputs.append(Input(shape=(c_dims,), name="dec_cond_inputs_{}".format(i)))
 
     inputs = [encoded_inputs] + c_inputs
 
     if self.with_embedding:
         cond_dec_inputs = self.to_embedding(c_inputs)
-        cond_dec_inputs_dims.append(latent_dims)
+        cond_dec_inputs_dims.append(self.emb_dims[-1])
         dec_inputs = [encoded_inputs, cond_dec_inputs]
     elif len(self.cond_dims) >= 2:
         cond_dec_inputs = concatenate(c_inputs, name="concat_cond")
@@ -156,13 +177,3 @@ def decoder_model(self, type, input_dims, latent_dims, decoder_dims=[24], **kwar
 
     return Model(inputs=inputs, outputs=dec_outputs, name="decoder")
 
-
-@tf.function
-def GaussianSampling(inputs):
-    """Uses (z_mean, z_log_var) to sample z, the vector encoding the profil."""
-
-    z_mean, z_log_var = inputs
-    batch = tf.shape(z_mean)[0]
-    dim = tf.shape(z_mean)[1]
-    epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
-    return z_mean + tf.exp(0.5 * z_log_var) * epsilon
