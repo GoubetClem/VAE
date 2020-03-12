@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Activation
+from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Activation, average
 from tensorflow.keras import Model, Input
 from tensorflow.keras import backend as K
 
@@ -95,14 +95,12 @@ def EmbeddingBlock_model(input_dims, emb_dims, has_BN=False, activation="relu", 
 
     return Model(inputs=cond_inputs, outputs=emb_outputs, name=name)
 
-
 def build_encoder_model(self, model_params):
 
     x_inputs = Input(shape=(model_params.input_dims,), name="enc_inputs")
     c_inputs = []
-    enc_block_outputs=[]
-    for i in tf.range(0, model_params.nb_latent_components, 1):
-        enc_block_outputs.append([])
+    ensemble=[[] for i in range(model_params.nb_latent_components)]
+
     cond_enc_inputs_dims=[]
 
     for i, c_dims in enumerate(model_params.cond_dims):
@@ -121,59 +119,66 @@ def build_encoder_model(self, model_params):
                 cond_enc_inputs = concatenate(c_inputs, name="concat_cond")
             else:
                 cond_enc_inputs = c_inputs
-
         cond_enc_inputs_dims.append(K.int_shape(cond_enc_inputs[0])[-1])
         enc_inputs = [x_inputs, cond_enc_inputs]
     else:
         enc_inputs = [x_inputs]
 
-    for idx in tf.range(0, model_params.nb_encoder_ensemble,1):
+    for idx in tf.range(0, model_params.nb_encoder_ensemble, 1):
         encoder_block = AE_blocks(input_dims=model_params.input_dims, cond_dims=cond_enc_inputs_dims,
                                   type=model_params.encoder_type, NN_dims=model_params.encoder_dims,
                                   name="encoder_block_{}".format(idx), activation="relu")
         enc_x = encoder_block(enc_inputs)
 
         for i in tf.range(0, model_params.nb_latent_components, 1):
-            enc_block_outputs[i].append(Dense(units=latent_dims, activation='linear',
-                                     name="latent_dense_{}_{}".format(idx, i+1))(enc_x))
+            ensemble[i].append(Dense(units=model_params.latent_dims, activation='linear',
+                                     name="latent_dense_{}_{}".format(idx,i+1))(enc_x))
 
-    enc_outputs=[]
-    for i in tf.range(0, model_params.nb_latent_components, 1):
-        enc_outputs.append(concatenate(enc_bloc_outputs[i]))
+    if model_params.nb_encoder_ensemble ==1:
+        enc_outputs = [ens_list[0] for ens_list in ensemble]
+    else:
+        enc_outputs = [average(ens_list) for ens_list in ensemble]
 
     return Model(inputs=inputs, outputs=enc_outputs, name="encoder")
-    #TODO block mixture et non mixture
 
-def build_decoder_model(self, type, input_dims, latent_dims, decoder_dims=[24], **kwargs):
+def build_decoder_model(self, model_params):
 
-    encoded_inputs = Input(shape=(latent_dims,), name="encoded_inputs")
+    encoded_inputs = Input(shape=(model_params.latent_dims,), name="encoded_inputs")
     c_inputs = []
+    ensemble = []
     cond_dec_inputs_dims = []
 
-    for i, c_dims in enumerate(self.cond_dims):
+    for i, c_dims in enumerate(model_params.cond_dims):
         c_inputs.append(Input(shape=(c_dims,), name="dec_cond_inputs_{}".format(i)))
 
     inputs = [encoded_inputs] + c_inputs
 
-    if self.with_embedding:
-        cond_dec_inputs = self.to_embedding(c_inputs)
-        cond_dec_inputs_dims.append(self.emb_dims[-1])
+    if len(c_inputs)>=1:
+        if model_params.with_embedding:
+            cond_dec_inputs = self.to_embedding(c_inputs)
+        else:
+            if len(c_inputs) >=2:
+                cond_dec_inputs = concatenate(c_inputs, name="concat_cond")
+            else:
+                cond_dec_inputs = c_inputs
+        cond_dec_inputs_dims.append(K.int_shape(cond_dec_inputs[0])[-1])
         dec_inputs = [encoded_inputs, cond_dec_inputs]
-    elif len(self.cond_dims) >= 2:
-        cond_dec_inputs = concatenate(c_inputs, name="concat_cond")
-        cond_dec_inputs_dims.append(K.int_shape(cond_dec_inputs)[-1])
-        dec_inputs = [encoded_inputs, cond_dec_inputs]
-    elif len(self.cond_dims) == 1:
-        cond_dec_inputs_dims.append(K.int_shape(c_inputs[0])[-1])
-        dec_inputs = [encoded_inputs, c_inputs]
     else:
         dec_inputs = [encoded_inputs]
 
-    decoder_block = AE_blocks(input_dims=latent_dims, cond_dims=cond_dec_inputs_dims, type=type, NN_dims=decoder_dims,
-                              name="decoder_block", activation="relu")
-    dec_x = decoder_block(dec_inputs)
+    for idx in tf.range(0, model_params.nb_decoder_ensemble, 1):
+        decoder_block = AE_blocks(input_dims=model_params.latent_dims, cond_dims=cond_dec_inputs_dims,
+                                  type=model_params.decoder_type, NN_dims=model_params.decoder_dims,
+                                  name="decoder_block_{}".format(idx), activation="relu")
 
-    dec_outputs = Dense(input_dims, activation='linear', name='dec_output')(dec_x)
+        dec_x = decoder_block(dec_inputs)
+
+        ensemble.append(Dense(model_params.input_dims, activation='linear', name='dec_output_{}'.format(idx))(dec_x))
+
+    if model_params.nb_decoder_ensemble==1:
+        dec_outputs = ensemble
+    else:
+        dec_outputs = average(ensemble, name="dec_averaging")
 
     return Model(inputs=inputs, outputs=dec_outputs, name="decoder")
 

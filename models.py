@@ -56,8 +56,8 @@ class AE_Model(ABC):
             filepath = os.path.join(folder, "%s.hdf5" %(block))
             getattr(self, block).save(filepath = filepath)
 
-        with open(self.VAE_params.name+'_model_architecture', 'wb') as config_model_file:
-            pickle.dump(self.VAE_params.model_params.__dict__, config_model_file)
+        with open(self.VAE_params.name+'_model_architecture.obj', 'w') as config_model_file:
+            pickle.dump(self.VAE_params.model_params, config_model_file)
 
     def load_weights(self, out_dir = None, retrieve_model_architecture=True):
         if out_dir is None:
@@ -66,7 +66,7 @@ class AE_Model(ABC):
         folder = os.path.join(out_dir, "model")
 
         if retrieve_model_architecture:
-            with open(self.VAE_params.name + '_model_architecture', 'rb') as config_model_file:
+            with open(self.VAE_params.name + '_model_architecture.obj', 'r') as config_model_file:
                 self.VAE_params.model_params = pickle.load(config_model_file)
 
             self.VAE_params.set_training_params()
@@ -133,8 +133,8 @@ class CVAE(AE_Model):
 
         # Training objectives settings
         optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
-        model_loss = self.VAE_params.training_params.loss(latent_components = enc_outputs,
-                                                    latent_sampling = dec_inputs[0], cond_inputs = c_inputs)
+        model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components = enc_outputs,
+                                                    latent_sampling = dec_inputs[0], cond_true = c_inputs)
 
         self.model.compile(loss=model_loss, optimizer=optimizer, experimental_run_tf_function=False)
 

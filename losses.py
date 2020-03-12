@@ -3,9 +3,11 @@ import tensorflow as tf
 from tensorflow.keras import backend as K
 
 @tf.function
-def build_kl_loss(latent_mu, latent_log_sigma, prior_mu=K.variable(0.), log_prior_sigma=K.variable(0.), **kwargs):
+def build_kl_loss(y_true, y_pred, latent_components, prior_mu=K.variable(0.), log_prior_sigma=K.variable(0.)):
+    latent_mu, latent_log_sigma = latent_components
     return 0.5 * K.sum((K.exp(latent_log_sigma) + K.square(latent_mu - prior_mu)) / K.exp(log_prior_sigma)
                        - 1. - latent_log_sigma + log_prior_sigma, axis=-1)
+
 
 @tf.function
 def kde(s1, s2, h=None):
@@ -18,8 +20,9 @@ def kde(s1, s2, h=None):
     tiled_s2 = K.tile(K.reshape(s2, K.stack([1, s2_size, dim])), K.stack([s1_size, 1, 1]))
     return K.exp(-0.5 * K.sum(K.square(tiled_s1 - tiled_s2), axis=-1) / h)
 
+
 @tf.function
-def build_info_loss(latent_mu, latent_sampling, **kwargs):
+def build_info_loss(y_true, y_pred, latent_mu, latent_sampling):
     q_kernel = kde(latent_mu, latent_mu)
     p_kernel = kde(latent_sampling, latent_sampling)
     pq_kernel = kde(latent_mu, latent_sampling)
@@ -69,7 +72,7 @@ def build_Renyi_entropy(A, alpha):
                                                                                     dtype='float64')
 
 
-def build_entropy_loss(y_true, cond_true, latent_mu, h, alpha, kappa=K.variable(1.), **kwargs):
+def build_entropy_loss(y_true, y_pred, cond_true, latent_mu, h=5, alpha=1.01, kappa=K.variable(1.)):
     #z = K.switch(K.greater(recon_loss(y_true, y_pred), 100.), K.random_normal(K.shape(z_mu), seed=42), z_mu)
     sigma = h * K.pow(K.cast(K.shape(y_true)[0], dtype='float64'), -1. / (4. + 1.))
     gram_x = build_gram_matrix(y_true, sigma)
