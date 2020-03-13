@@ -5,8 +5,18 @@ from tensorflow.keras.losses import MeanAbsoluteError, MeanSquaredError
 
 
 class VAELoss():
+    """
+    Class to build custom VAE loss in an aggregative way
+    """
 
     def __init__(self, loss_weights={"recon_loss": 1.}, recon_loss="mae", custom_loss=None):
+        """
+
+        :param loss_weights: dict, {<str>:<float>} name and associated weight of the considered loss
+        :param recon_loss: "mae" or "mse", whether to consider a L1 or L2 reconstruction loss
+        :param custom_loss: dict, {"name_1":{"function" : <function>, "args":{}}} dictionary of custom losses externally built
+        """
+
         self.loss_weights = loss_weights
         self.custom_loss = custom_loss
         self.prior_mu = K.variable(0.)
@@ -35,12 +45,11 @@ class VAELoss():
 
     def get_dict(self, **kwargs):
         """
-        DEFINE THIS AS YOU WANT
-        :param x:
-        :param z:
-        :param hat_x:
-        :return:
+        CAN BE MODIFIED CONSIDERING NEW OUTPUTS OF THE MODEL
+        :param kwargs: references to pointers of  outputs in the graph (see models.py)
+        :return: dict, dictionary of kwargs to be used in each referenced loss
         """
+
         dict_args_ = {}
 
         dict_args_["kl_loss"] = {"latent_components": kwargs["latent_components"], "prior_mu" : self.prior_mu,
@@ -59,10 +68,7 @@ class VAELoss():
     def _get_loss_function(self, **kwargs):
         """
         DO NOT TOUCH THIS
-        :param x:
-        :param z:
-        :param hat_x:
-        :return:
+
         """
         dict_ = self.get_dict(**kwargs)
 

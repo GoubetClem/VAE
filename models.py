@@ -57,8 +57,8 @@ class AE_Model(ABC):
             filepath = os.path.join(folder, "%s.hdf5" %(block))
             getattr(self, block).save(filepath = filepath)
 
-        graph_params = copy.deepcopy(self.VAE_params.model_params.__dict__)
-        with open(self.VAE_params.name+'_model_architecture.obj', 'w') as config_model_file:
+        graph_params = copy.deepcopy(self.VAE_params.model_params)
+        with open(self.VAE_params.name+'_model_architecture.obj', 'wb') as config_model_file:
             pickle.dump(graph_params, config_model_file)
 
     def load_weights(self, out_dir = None, retrieve_model_architecture=True):
@@ -68,8 +68,8 @@ class AE_Model(ABC):
         folder = os.path.join(out_dir, "model")
 
         if retrieve_model_architecture:
-            with open(self.VAE_params.name + '_model_architecture.obj', 'r') as config_model_file:
-                self.VAE_params.model_params.__dict__ = pickle.load(config_model_file)
+            with open(self.VAE_params.name + '_model_architecture.obj', 'rb') as config_model_file:
+                self.VAE_params.model_params = pickle.load(config_model_file)
 
             self.VAE_params.set_training_params()
 
@@ -86,6 +86,13 @@ class CVAE(AE_Model):
         AE_Model.__init__(self, VAE_params = VAE_params)
 
     def build_model(self, VAE_params, custom_encoder_model=None, custom_decoder_model=None):
+        """
+
+        :param VAE_params: VAE_params class, subclasses of parameters needed to build each layers of the autoencoders and training paramaters to be used in the compile function
+        :param custom_encoder_model: TF Model, to be used as encoder model in the graph
+        :param custom_decoder_model: TF Model, to be used as decoder model in the graph
+        :return: build graph and compile model in the CVAE Class
+        """
         self.VAE_params.model_params = VAE_params.model_params
 
         # getting the graph inputs
@@ -118,7 +125,11 @@ class CVAE(AE_Model):
             dec_inputs = [z] + c_inputs
 
         dec_outputs = self.decoder(dec_inputs)
-        x_hat = dec_outputs[0]
+
+        if self.VAE_params.model_params.nb_decoder_outputs == 1:
+            x_hat = dec_outputs
+        else:
+            x_hat = Lambda(self.VAE_params.model_params.reparametrize, name="loglikelihood_layer")(dec_outputs)
 
         self.model = Model(inputs=inputs, outputs=x_hat, name="cae")
         self.model.summary()

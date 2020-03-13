@@ -4,6 +4,9 @@ from reparametrize_functions import *
 from loss_class import *
 
 class ModelParams():
+    """
+    Class which will gather all parameters needed in the construction of each neural network block
+    """
     def __init__(self):
         self.cond_dims = []
         self.with_embedding = False
@@ -23,6 +26,9 @@ class ModelParams():
 
 
 class TrainingParams():
+    """
+    Class wich will gather all needed parameters needed in the compilation of the TF Keras Model
+    """
     def __init__(self):
         self.optimizer=Adam
         self.lr=3e-4
