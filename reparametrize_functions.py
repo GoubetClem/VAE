@@ -11,9 +11,3 @@ def GaussianSampling(inputs):
     return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
 
-def GaussianMixtureSampling(inputs):
-
-    mu_tensor, log_sigma_tensor, mixture_vec = inputs
-    batch, dim, n_mixture = tf.shape(mu_tensor)
-
-    epsilon = tf.keras.backend.random_normal(shape=(batch, dim, n_mixture))

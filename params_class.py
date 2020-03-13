@@ -16,6 +16,7 @@ class ModelParams():
         self.nb_encoder_ensemble = 1
         self.encoder_dims = [48,48,24,12]
         self.encoder_type = "NNBlockCond_model"
+        self.nb_decoder_outputs = 1
         self.nb_decoder_ensemble = 1
         self.decoder_dims = [48,48,24,12]
         self.decoder_type = "InceptionBlock_model"
@@ -25,7 +26,7 @@ class TrainingParams():
     def __init__(self):
         self.optimizer=Adam
         self.lr=3e-4
-        self.loss = VAE_Loss()
+        self.loss = VAELoss()
 
 
 class VAE_params():

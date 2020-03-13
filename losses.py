@@ -8,6 +8,9 @@ def build_kl_loss(y_true, y_pred, latent_components, prior_mu=K.variable(0.), lo
     return 0.5 * K.sum((K.exp(latent_log_sigma) + K.square(latent_mu - prior_mu)) / K.exp(log_prior_sigma)
                        - 1. - latent_log_sigma + log_prior_sigma, axis=-1)
 
+@tf.function
+def build_gaussian_loglikelihood(y_true, y_pred, log_sigma=K.variable(0.)):
+    return K.mean(K.sum(-0.5 * (log_sigma + K.square(y_true-y_pred) / K.exp(log_sigma)), axis=-1))
 
 @tf.function
 def kde(s1, s2, h=None):
@@ -22,11 +25,11 @@ def kde(s1, s2, h=None):
 
 
 @tf.function
-def build_info_loss(y_true, y_pred, latent_mu, latent_sampling):
+def build_mmd_loss(y_true, y_pred, latent_mu, latent_sampling):
     q_kernel = kde(latent_mu, latent_mu)
     p_kernel = kde(latent_sampling, latent_sampling)
     pq_kernel = kde(latent_mu, latent_sampling)
-    return K.mean(q_kernel) + K.mean(p_kernel) - 2 * K.mean(pq_kernel)
+    return K.mean(K.mean(q_kernel, axis=-1) + K.mean(p_kernel, axis=-1) - 2 * K.mean(pq_kernel, axis=-1))
 
 
 def build_gram_matrix(s1, h):

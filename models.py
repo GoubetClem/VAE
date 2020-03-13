@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import os
 import pickle
+import copy
 import matplotlib.pyplot as plt
 
 from tensorflow.keras.layers import Lambda
@@ -56,8 +57,9 @@ class AE_Model(ABC):
             filepath = os.path.join(folder, "%s.hdf5" %(block))
             getattr(self, block).save(filepath = filepath)
 
+        graph_params = copy.deepcopy(self.VAE_params.model_params.__dict__)
         with open(self.VAE_params.name+'_model_architecture.obj', 'w') as config_model_file:
-            pickle.dump(self.VAE_params.model_params, config_model_file)
+            pickle.dump(graph_params, config_model_file)
 
     def load_weights(self, out_dir = None, retrieve_model_architecture=True):
         if out_dir is None:
@@ -67,7 +69,7 @@ class AE_Model(ABC):
 
         if retrieve_model_architecture:
             with open(self.VAE_params.name + '_model_architecture.obj', 'r') as config_model_file:
-                self.VAE_params.model_params = pickle.load(config_model_file)
+                self.VAE_params.model_params.__dict__ = pickle.load(config_model_file)
 
             self.VAE_params.set_training_params()
 
@@ -115,7 +117,8 @@ class CVAE(AE_Model):
             z = Lambda(self.VAE_params.model_params.reparametrize, name="reparametrizing_layer")(enc_outputs)
             dec_inputs = [z] + c_inputs
 
-        x_hat = self.decoder(dec_inputs)
+        dec_outputs = self.decoder(dec_inputs)
+        x_hat = dec_outputs[0]
 
         self.model = Model(inputs=inputs, outputs=x_hat, name="cae")
         self.model.summary()
@@ -133,8 +136,23 @@ class CVAE(AE_Model):
 
         # Training objectives settings
         optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
-        model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components = enc_outputs,
-                                                    latent_sampling = dec_inputs[0], cond_true = c_inputs)
+
+        if self.VAE_params.model_params.with_embedding:
+            emb_outputs = self.to_embedding(inputs)
+            model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
+                                                                             latent_sampling=dec_inputs[0],
+                                                                             cond_true=c_inputs,
+                                                                                 dec_outputs = dec_outputs,
+                                                                             embedding_outputs = emb_outputs)
+        else:
+            model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
+                                                                            latent_sampling=dec_inputs[0],
+                                                                            cond_true=c_inputs,
+                                                                                 dec_outputs = dec_outputs)
+
+        print("Losses and associated weight involved in the model: ")
+        [print(loss_key, " : ",
+               self.VAE_params.training_params.loss.loss_weights[loss_key]) for loss_key in self.VAE_params.training_params.loss.losses.keys()]
 
         self.model.compile(loss=model_loss, optimizer=optimizer, experimental_run_tf_function=False)
 

@@ -137,7 +137,7 @@ def build_encoder_model(self, model_params):
     if model_params.nb_encoder_ensemble ==1:
         enc_outputs = [ens_list[0] for ens_list in ensemble]
     else:
-        enc_outputs = [average(ens_list) for ens_list in ensemble]
+        enc_outputs = [average(ens_list, name="enc_averaging") for ens_list in ensemble]
 
     return Model(inputs=inputs, outputs=enc_outputs, name="encoder")
 
@@ -145,7 +145,7 @@ def build_decoder_model(self, model_params):
 
     encoded_inputs = Input(shape=(model_params.latent_dims,), name="encoded_inputs")
     c_inputs = []
-    ensemble = []
+    ensemble = [[] for i in range(model_params.nb_decoder_outputs)]
     cond_dec_inputs_dims = []
 
     for i, c_dims in enumerate(model_params.cond_dims):
@@ -173,12 +173,14 @@ def build_decoder_model(self, model_params):
 
         dec_x = decoder_block(dec_inputs)
 
-        ensemble.append(Dense(model_params.input_dims, activation='linear', name='dec_output_{}'.format(idx))(dec_x))
+        for i in tf.range(0, model_params.nb_decoder_outputs, 1):
+            ensemble[i].append(Dense(units=model_params.input_dims, activation='linear',
+                                     name="dec_output_{}_{}".format(idx,i+1))(dec_x))
 
-    if model_params.nb_decoder_ensemble==1:
-        dec_outputs = ensemble
+    if model_params.nb_decoder_ensemble == 1:
+        dec_outputs = [ens_list[0] for ens_list in ensemble]
     else:
-        dec_outputs = average(ensemble, name="dec_averaging")
+        dec_outputs = [average(ens_list, name="dec_averaging") for ens_list in ensemble]
 
     return Model(inputs=inputs, outputs=dec_outputs, name="decoder")
 
