@@ -1,5 +1,6 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Activation, average, Conv1D, Conv2D
+from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Activation, average,\
+    Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Flatten
 from tensorflow.keras import Model, Input
 from tensorflow.keras import backend as K
 
@@ -68,7 +69,13 @@ class AE_blocks():
         x_inputs = Input(shape=(self.input_dims,), name="input_" + self.name)
 
         x = Conv1D(filters=self.input_dims, kernel_size=4, strides=1, padding="causal",
-                   name="conv1D_layer")(x_inputs)
+                   name="conv1D_layer")(tf.expand_dims(x_inputs, axis=-1))
+
+        x = Conv1D(filters=self.input_dims, kernel_size=10, strides=1,
+                   name="conv1D_layer_2")(x)
+
+        x = MaxPooling1D(pool_size= 3, name="pooling_layer")(x)
+        x = Flatten(name = "global_ravel")(x)
 
         cond_inputs = []
 

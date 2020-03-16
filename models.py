@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 import os
-import pickle
+import json
 import copy
 import matplotlib.pyplot as plt
 
 from tensorflow.keras.layers import Lambda
-
+from reparametrize_functions import *
 from AE_blocks import *
 
 
@@ -57,23 +57,28 @@ class AE_Model(ABC):
             filepath = os.path.join(folder, "%s.hdf5" %(block))
             getattr(self, block).save(filepath = filepath)
 
-        graph_params = copy.deepcopy(self.VAE_params.model_params)
-        with open(self.VAE_params.name+'_model_architecture.obj', 'wb') as config_model_file:
-            pickle.dump(graph_params, config_model_file)
+        graph_params = copy.deepcopy(self.VAE_params.model_params.__dict__)
+        filename = os.path.join(folder, self.VAE_params.name+'_model_architecture.json')
+        with open(filename, 'w') as config_model_file:
+            json.dump(graph_params, config_model_file, indent=4)
 
-    def load_weights(self, out_dir = None, retrieve_model_architecture=True):
+    def load_model(self, out_dir = None, retrieve_model_architecture=True):
         if out_dir is None:
             out_dir = self.VAE_params.folder
 
         folder = os.path.join(out_dir, "model")
 
         if retrieve_model_architecture:
-            with open(self.VAE_params.name + '_model_architecture.obj', 'rb') as config_model_file:
-                self.VAE_params.model_params = pickle.load(config_model_file)
+            filename = os.path.join(folder, self.VAE_params.name + '_model_architecture.json')
+            with open(filename, 'r') as config_model_file:
+                model_params_dict = json.load(config_model_file)
+
+            for k,v in model_params_dict.items():
+                setattr(self.VAE_params.model_params, k, v)
 
             self.VAE_params.set_training_params()
 
-            self.build_model(self, self.VAE_params)
+            self.build_model(self.VAE_params)
 
         for block in self.blocks:
             filepath = os.path.join(folder, "%s.hdf5" %(block))
@@ -121,7 +126,7 @@ class CVAE(AE_Model):
         if self.VAE_params.model_params.nb_latent_components ==1:
             dec_inputs = enc_outputs + c_inputs
         else:
-            z = Lambda(self.VAE_params.model_params.reparametrize, name="reparametrizing_layer")(enc_outputs)
+            z = Lambda(eval(self.VAE_params.model_params.reparametrize), name="reparametrizing_layer")(enc_outputs)
             dec_inputs = [z] + c_inputs
 
         dec_outputs = self.decoder(dec_inputs)
@@ -129,7 +134,7 @@ class CVAE(AE_Model):
         if self.VAE_params.model_params.nb_decoder_outputs == 1:
             x_hat = dec_outputs
         else:
-            x_hat = Lambda(self.VAE_params.model_params.reparametrize, name="loglikelihood_layer")(dec_outputs)
+            x_hat = Lambda(eval(self.VAE_params.model_params.reparametrize), name="loglikelihood_layer")(dec_outputs)
 
         self.model = Model(inputs=inputs, outputs=x_hat, name="cae")
         self.model.summary()

@@ -1,6 +1,5 @@
 import os
 from tensorflow.keras.optimizers import Adam
-from reparametrize_functions import *
 from loss_class import *
 
 class ModelParams():
@@ -11,7 +10,7 @@ class ModelParams():
         self.cond_dims = []
         self.with_embedding = False
         self.emb_dims = []
-        self.reparametrize = GaussianSampling
+        self.reparametrize = "GaussianSampling"
 
         self.input_dims=48
         self.latent_dims = 4
@@ -51,16 +50,17 @@ class VAE_params():
         if not os.path.isdir(self.folder):
             os.mkdir(self.folder)
 
-    def set_model_params(self):
+    def set_model_params(self, recall=True):
         self.model_params = ModelParams()
 
-        print("Default values for model architecture are:")
-        for key, value in self.model_params.__dict__.items():
-            print(key, " := ", value)
+        if recall:
+            print("Default values for model architecture are:")
+            for key, value in self.model_params.__dict__.items():
+                print(key, " := ", value)
 
-    def set_training_params(self):
+    def set_training_params(self, recall=True):
         self.training_params = TrainingParams()
-        if "lr" in self.training_params.__dict__.keys():
+        if "lr" in self.training_params.__dict__.keys() and recall:
             print(
                 "Default parameters for training are a L1 loss with Adam optimizer with a learning rate of %1s" % self.training_params.lr)
 
