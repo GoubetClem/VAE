@@ -30,7 +30,10 @@ class AE_Model(ABC):
 
         print("## START TRAINING ##")
 
-        training_history = self.model.fit(validation_split=0.1, *args, **kwargs)
+        if "validation_split" not in kwargs:
+            kwargs["validation_split"] = 0.1
+
+        training_history = self.model.fit(*args, **kwargs)
 
         print("## END TRAINING ##")
 
@@ -51,7 +54,7 @@ class AE_Model(ABC):
 
         folder = os.path.join(out_dir, "model")
         if not os.path.isdir(folder):
-            os.mkdir(folder)
+            os.makedirs(folder)
 
         for block in self.blocks:
             filepath = os.path.join(folder, "%s.hdf5" %(block))
@@ -124,7 +127,7 @@ class CVAE(AE_Model):
         enc_outputs = self.encoder(inputs)
 
         if self.VAE_params.model_params.nb_latent_components ==1:
-            dec_inputs = enc_outputs + c_inputs
+            dec_inputs = [enc_outputs] + c_inputs
         else:
             z = Lambda(eval(self.VAE_params.model_params.reparametrize), name="reparametrizing_layer")(enc_outputs)
             dec_inputs = [z] + c_inputs

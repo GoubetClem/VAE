@@ -20,7 +20,7 @@ class ModelParams():
         self.encoder_type = "NNBlockCond_model"
         self.nb_decoder_outputs = 1
         self.nb_decoder_ensemble = 1
-        self.decoder_dims = [48,48,24,12]
+        self.decoder_dims = [12,24,48,48]
         self.decoder_type = "InceptionBlock_model"
 
 
