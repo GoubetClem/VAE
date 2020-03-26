@@ -248,7 +248,7 @@ def build_decoder_model(self, model_params):
         dec_x = decoder_block(dec_inputs)
 
         for i in tf.range(0, model_params.nb_decoder_outputs, 1):
-            ensemble[i].append(Dense(units=model_params.input_dims, activation='linear',
+            ensemble[i].append(Dense(units=model_params.output_dims, activation='linear',
                                      name="dec_output_{}_{}".format(idx,i+1))(dec_x))
 
     if model_params.nb_decoder_ensemble == 1:

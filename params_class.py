@@ -13,6 +13,7 @@ class ModelParams():
         self.reparametrize = "GaussianSampling"
 
         self.input_dims=48
+        self.output_dims=48
         self.latent_dims = 4
         self.nb_latent_components = 2
         self.nb_encoder_ensemble = 1
@@ -48,7 +49,7 @@ class VAE_params():
 
         self.folder = os.path.join(kwargs["out_dir"], self.name)
         if not os.path.isdir(self.folder):
-            os.mkdir(self.folder)
+            os.makedirs(self.folder)
 
     def set_model_params(self, recall=True):
         self.model_params = ModelParams()

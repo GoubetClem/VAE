@@ -28,6 +28,8 @@ class VAELoss():
                 self.losses["recon_loss"] = MeanAbsoluteError()
             elif recon_loss == "mse":
                 self.losses["recon_loss"] = MeanSquaredError()
+            else:
+                raise ValueError("Unknown reconstruction loss type. Try 'mae' or 'mse'")
 
         if "kl_loss" in loss_weights.keys():
             self.losses["kl_loss"] = build_kl_loss

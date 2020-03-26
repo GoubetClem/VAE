@@ -3,10 +3,12 @@ import tensorflow as tf
 from tensorflow.keras import backend as K
 
 @tf.function
-def build_kl_loss(y_true, y_pred, latent_components, prior_mu=K.variable(0.), log_prior_sigma=K.variable(0.)):
+def build_kl_loss(y_true, y_pred, latent_components, prior_mu=K.variable(0.), log_prior_sigma=K.variable(0.),
+                  annealing_value = K.variable(0.)):
     latent_mu, latent_log_sigma = latent_components
-    return K.mean(0.5 * K.sum((K.exp(latent_log_sigma) + K.square(latent_mu - prior_mu)) / K.exp(log_prior_sigma)
+    kl = K.mean(0.5 * K.sum((K.exp(latent_log_sigma) + K.square(latent_mu - prior_mu)) / K.exp(log_prior_sigma)
                        - 1. - latent_log_sigma + log_prior_sigma, axis=-1))
+    return K.abs(kl - annealing_value)
 
 @tf.function
 def build_gaussian_loglikelihood(y_true, y_pred, log_sigma=K.variable(0.)):
