@@ -21,6 +21,7 @@ class VAELoss():
         self.custom_loss = custom_loss
         self.prior_mu = K.variable(0.)
         self.log_prior_sigma = K.variable(0.)
+        self.kl_annealing = K.variable(0.)
 
         self.losses = {}
         if "recon_loss" in loss_weights.keys():
@@ -55,7 +56,7 @@ class VAELoss():
         dict_args_ = {}
 
         dict_args_["kl_loss"] = {"latent_components": kwargs["latent_components"], "prior_mu" : self.prior_mu,
-                                 "log_prior_sigma" : self.log_prior_sigma}
+                                 "log_prior_sigma" : self.log_prior_sigma, "annealing_value" : self.kl_annealing}
         dict_args_["info_loss"] = {"latent_mu": kwargs["latent_components"][0],
                                    "latent_sampling": kwargs["latent_sampling"]}
         dict_args_["entropy_loss"] = {"cond_true": kwargs["cond_true"], "latent_mu": kwargs["latent_components"][0]}
