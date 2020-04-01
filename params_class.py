@@ -63,5 +63,5 @@ class VAE_params():
         self.training_params = TrainingParams()
         if "lr" in self.training_params.__dict__.keys() and recall:
             print(
-                "Default parameters for training are a L1 loss with Adam optimizer with a learning rate of %1s" % self.training_params.lr)
+                "Default parameters for training are a L2 loss with Adam optimizer with a learning rate of %1s" % self.training_params.lr)
 

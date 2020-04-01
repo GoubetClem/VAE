@@ -12,7 +12,7 @@ def build_kl_loss(y_true, y_pred, latent_components, prior_mu=K.variable(0.), lo
 
 @tf.function
 def build_gaussian_loglikelihood(y_true, y_pred, log_sigma=K.variable(0.)):
-    return K.mean(K.sum(-0.5 * (log_sigma + K.square(y_true-y_pred) / K.exp(log_sigma)), axis=-1))
+    return K.mean(0.5 * (log_sigma + K.square(y_true-y_pred) / K.exp(log_sigma)))
 
 @tf.function
 def kde(s1, s2, h=None):

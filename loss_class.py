@@ -1,7 +1,7 @@
 from losses import *
 import tensorflow as tf
 from tensorflow.keras import backend as K
-from tensorflow.keras.losses import MeanAbsoluteError, MeanSquaredError
+from tensorflow.keras.losses import MeanAbsoluteError, MeanSquaredError, BinaryCrossentropy
 
 
 class VAELoss():
@@ -9,7 +9,7 @@ class VAELoss():
     Class to build custom VAE loss in an aggregative way
     """
 
-    def __init__(self, loss_weights={"recon_loss": 1.}, recon_loss="mae", custom_loss=None):
+    def __init__(self, loss_weights={"recon_loss": 1.}, recon_loss="mse", custom_loss=None):
         """
 
         :param loss_weights: dict, {<str>:<float>} name and associated weight of the considered loss
@@ -29,8 +29,10 @@ class VAELoss():
                 self.losses["recon_loss"] = MeanAbsoluteError()
             elif recon_loss == "mse":
                 self.losses["recon_loss"] = MeanSquaredError()
+            elif recon_loss == "binarycrossentropy":
+                self.losses["recon_loss"] = BinaryCrossentropy()
             else:
-                raise ValueError("Unknown reconstruction loss type. Try 'mae' or 'mse'")
+                raise ValueError("Unknown reconstruction loss type. Try 'mae' or 'mse' or 'binarycrossentropy'")
 
         if "kl_loss" in loss_weights.keys():
             self.losses["kl_loss"] = build_kl_loss
@@ -40,6 +42,9 @@ class VAELoss():
 
         if "entropy_loss" in loss_weights.keys():
             self.losses["entropy_loss"] = build_entropy_loss
+
+        if "loglikelihood" in loss_weights.keys():
+            self.losses["loglikelihood"] = build_gaussian_loglikelihood
 
         if custom_loss is not None:
             for key in custom_loss.keys():
@@ -61,9 +66,12 @@ class VAELoss():
                                    "latent_sampling": kwargs["latent_sampling"]}
         dict_args_["entropy_loss"] = {"cond_true": kwargs["cond_true"], "latent_mu": kwargs["latent_components"][0]}
 
+        dict_args["loglikelihood"] = {"log_sigma" : kwargs["dec_outputs"][1]}
+
         if self.custom_loss is not None:
             for key in self.custom_loss.keys():
-                dict_args_[key] = {arg: self.custom_loss[key]["args"][arg] for arg in self.custom_loss[key]["args"].keys()}
+                dict_args_[key] = {arg: eval(self.custom_loss[key]["args"][arg],{"__builtins__": None},
+                                             {"kwargs": kwargs}) for arg in self.custom_loss[key]["args"].keys()}
 
         return dict_args_
 
