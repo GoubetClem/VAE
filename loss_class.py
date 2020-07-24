@@ -9,7 +9,8 @@ class VAELoss():
     Class to build custom VAE loss in an aggregative way
     """
 
-    def __init__(self, loss_weights={"recon_loss": 1.}, recon_loss="mse", custom_loss=None):
+    def __init__(self, loss_weights={"recon_loss": 1.}, recon_loss="mse", custom_loss=None,
+                 options={"prior_mu":0., "log_prior_sigma":0., "kl_annealing":0., "alpha":1.01, "h":1.}):
         """
 
         :param loss_weights: dict, {<str>:<float>} name and associated weight of the considered loss
@@ -19,18 +20,17 @@ class VAELoss():
 
         self.loss_weights = loss_weights
         self.custom_loss = custom_loss
-        self.prior_mu = K.variable(0.)
-        self.log_prior_sigma = K.variable(0.)
-        self.kl_annealing = K.variable(0.)
+        self.options = options
+
 
         self.losses = {}
         if "recon_loss" in loss_weights.keys():
             if recon_loss == "mae":
-                self.losses["recon_loss"] = MeanAbsoluteError()
+                self.losses["recon_loss"] = MeanAbsoluteError(reduction=tf.keras.losses.Reduction.SUM)
             elif recon_loss == "mse":
-                self.losses["recon_loss"] = MeanSquaredError()
+                self.losses["recon_loss"] = MeanSquaredError(reduction=tf.keras.losses.Reduction.SUM)
             elif recon_loss == "binarycrossentropy":
-                self.losses["recon_loss"] = BinaryCrossentropy()
+                self.losses["recon_loss"] = BinaryCrossentropy(reduction=tf.keras.losses.Reduction.SUM)
             else:
                 raise ValueError("Unknown reconstruction loss type. Try 'mae' or 'mse' or 'binarycrossentropy'")
 
@@ -40,8 +40,8 @@ class VAELoss():
         if "info_loss" in loss_weights.keys():
             self.losses["info_loss"] = build_mmd_loss
 
-        if "entropy_loss" in loss_weights.keys():
-            self.losses["entropy_loss"] = build_entropy_loss
+        if "mutualinfo_loss" in loss_weights.keys():
+            self.losses["mutualinfo_loss"] = build_mutualinfo_loss
 
         if "loglikelihood" in loss_weights.keys():
             self.losses["loglikelihood"] = build_gaussian_loglikelihood
@@ -60,13 +60,15 @@ class VAELoss():
 
         dict_args_ = {}
 
-        dict_args_["kl_loss"] = {"latent_components": kwargs["latent_components"], "prior_mu" : self.prior_mu,
-                                 "log_prior_sigma" : self.log_prior_sigma, "annealing_value" : self.kl_annealing}
+        dict_args_["kl_loss"] = {"latent_components": kwargs["latent_components"], "prior_mu" : self.options["prior_mu"],
+                                 "log_prior_sigma" : self.options["log_prior_sigma"],
+                                 "annealing_value" : self.options["kl_annealing"]}
         dict_args_["info_loss"] = {"latent_mu": kwargs["latent_components"][0],
                                    "latent_sampling": kwargs["latent_sampling"]}
-        dict_args_["entropy_loss"] = {"cond_true": kwargs["cond_true"], "latent_mu": kwargs["latent_components"][0]}
+        dict_args_["mutualinfo_loss"] = {"cond_true": kwargs["cond_true"], "latent_mu": kwargs["latent_components"][0],
+                                         "h":self.options["h"], "alpha":self.options["alpha"]}
 
-        dict_args["loglikelihood"] = {"log_sigma" : kwargs["dec_outputs"][1]}
+        dict_args_["loglikelihood"] = {"log_sigma" : kwargs["dec_outputs"][1]}
 
         if self.custom_loss is not None:
             for key in self.custom_loss.keys():

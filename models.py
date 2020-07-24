@@ -157,7 +157,7 @@ class CVAE(AE_Model):
         optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
 
         if self.VAE_params.model_params.with_embedding:
-            emb_outputs = self.to_embedding(inputs)
+            emb_outputs = self.to_embedding(c_inputs)
             model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
                                                                              latent_sampling=dec_inputs[0],
                                                                              cond_true=c_inputs,

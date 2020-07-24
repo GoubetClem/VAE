@@ -1,6 +1,8 @@
 # A file where to define losses
-import tensorflow as tf
+import tensorflow as tf, numpy as np
 from tensorflow.keras import backend as K
+from scipy import sparse
+
 
 @tf.function
 def build_kl_loss(y_true, y_pred, latent_components, prior_mu=K.variable(0.), log_prior_sigma=K.variable(0.),
@@ -45,58 +47,57 @@ def build_gram_matrix(s1, h):
     tiled_s2 = K.tile(K.reshape(s1, K.stack([1, s1_size, dim])), K.stack([s1_size, 1, 1]))
     Dist_M = K.exp(-0.5 * K.square(K.cast((tiled_s1 - tiled_s2), dtype='float64') / h))
 
-    list_dist_M = [K.squeeze(K.slice(Dist_M, [0, 0, i], K.stack([s1_size, s1_size, 1])), axis=-1) for i in
-                   range(K.int_shape(s1)[1])]
+    gram_matrix = K.prod(Dist_M, axis=-1)
 
-    gram_list = []
-    for dist_M in list_dist_M:
-        diag = tf.diag_part(dist_M)
-        diag_1 = K.tile(K.reshape(diag, K.stack([s1_size, 1])), K.stack([1, s1_size]))
-        diag_2 = K.tile(K.reshape(diag, K.stack([1, s1_size])), K.stack([s1_size, 1]))
-        gram_list.append(dist_M / K.sqrt(diag_1 * diag_2) / K.cast(s1_size, dtype='float64'))
+    diag = tf.linalg.diag_part(gram_matrix)
+    diag_1 = K.tile(K.reshape(diag, K.stack([s1_size, 1])), K.stack([1, s1_size]))
+    diag_2 = K.tile(K.reshape(diag, K.stack([1, s1_size])), K.stack([s1_size, 1]))
+    normed_gram_matrix = gram_matrix / K.sqrt(diag_1 * diag_2) / (K.cast(s1_size**dim, dtype='float64'))
 
-    return gram_list
+    return gram_matrix
 
 
-def build_joint_entropy(list_M):
-    AB = K.cast(K.ones_like(list_M[0]), dtype='float64')
-    for M in list_M:
-        AB = AB * M
+def trace_normalize(A):
+    trace_A = tf.linalg.trace(A)
+    return A / trace_A
 
-    res = AB / K.cast(K.reshape(tf.trace(AB), K.stack([1])), dtype='float64')
-    return K.reshape(res, K.shape(list_M[0]))
+def numpy_Renyi_entropy(input_A, alpha):
+    """Compute the Renyi entropy analogy of a matrix based on its eigenvalues
+
+    params:
+    A -- array-like, matrix
+    alpha -- float, Renyi entropy parameter
+    """
+    A = input_A
+    A[A*A.shape[0] < 1e-3] = 0
+    A_sparse = sparse.csc_matrix(A)
+    A_eigval,_ =  np.abs(sparse.linalg.eigsh(A_sparse)) + 1e-6
+    return np.float32(np.log(np.sum((A_eigval)**alpha)) / np.log(2) / (1 - alpha))
+
+def Renyi_entropy(A, alpha):
+    A_eigval, _ = tf.linalg.eigh(A)
+    Rent = K.log(K.sum(K.pow(A_eigval+1e-6, alpha))) / K.cast((1. - alpha) * K.log(2.), dtype='float64')
+    return K.cast(Rent, dtype='float32')
 
 
-def build_Renyi_entropy(A, alpha):
-    A = K.cast(A, dtype='float64')
-    # A = K.switch(K.sum(K.cast(tf.is_nan(A),dtype='float64')) >0, K.ones(1, dtype='float64'), A)
-    input_A = K.cast(0.5 * (A + K.transpose(A)), dtype='float64')
-    eig_values, _ = tf.linalg.eigh(input_A)
-    eig_values = eig_values + 1.e-6
-    return K.cast(K.log(K.sum(K.pow(eig_values, alpha))), dtype='float64') / K.cast((1. - alpha) * K.log(2.),
-                                                                                    dtype='float64')
-
-
-def build_entropy_loss(y_true, y_pred, cond_true, latent_mu, h=5, alpha=1.01, kappa=K.variable(1.)):
-    #z = K.switch(K.greater(recon_loss(y_true, y_pred), 100.), K.random_normal(K.shape(z_mu), seed=42), z_mu)
+def build_mutualinfo_loss(y_true, y_pred, cond_true, latent_mu, h=1, alpha=1.01, kappa=1.):
     sigma = h * K.pow(K.cast(K.shape(y_true)[0], dtype='float64'), -1. / (4. + 1.))
+
+    if len(cond_true)>=2:
+        cond_in = K.concatenate(cond_true, axis=-1)
+    else:
+        cond_in = cond_true[0]
+
     gram_x = build_gram_matrix(y_true, sigma)
-    gram_c = build_gram_matrix(cond_true, sigma)
-    gram_z = build_gram_matrix(latent_mu, sigma)  # K.ones_like(z_mu, dtype='float32')
-    # gram_z = [K.eye(self.batch_size, dtype='float64')*K.cast(self.buffer < 10000, dtype='float64')]*4 #+ K.cast(self.buffer > 10000, dtype='float64')*g_z for g_z in gram_z] #]
+    gram_c = build_gram_matrix(cond_in, sigma)
+    gram_z = build_gram_matrix(latent_mu, sigma)
 
-    joint_entropy_x = build_joint_entropy(gram_x)
-    joint_entropy_z = build_joint_entropy(gram_z)
-    joint_entropy_cond = build_joint_entropy(gram_c)
-    joint_entropy_xz = build_joint_entropy(gram_z + gram_x)
-    joint_entropy_zcond = build_joint_entropy(gram_z + gram_c)
+    cond_MI = Renyi_entropy(trace_normalize(gram_z), alpha) + \
+              Renyi_entropy(trace_normalize(gram_c), alpha) -\
+              Renyi_entropy(trace_normalize(gram_c * gram_z), alpha)
 
-    cond_MI = build_Renyi_entropy(joint_entropy_z, alpha) + \
-              build_Renyi_entropy(joint_entropy_cond, alpha) -\
-              build_Renyi_entropy(joint_entropy_zcond, alpha)
+    input_MI = Renyi_entropy(trace_normalize(gram_z), alpha) + \
+               Renyi_entropy(trace_normalize(gram_x), alpha) -\
+               Renyi_entropy(trace_normalize(gram_x * gram_z), alpha)
 
-    input_MI = build_Renyi_entropy(joint_entropy_z, alpha) + \
-               build_Renyi_entropy(joint_entropy_x, alpha) -\
-               build_Renyi_entropy(joint_entropy_xz, alpha)
-
-    return 1 / input_MI + kappa  * cond_MI
+    return K.cast(1. / input_MI + kappa * cond_MI, dtype='float32')
