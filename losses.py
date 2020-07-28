@@ -37,8 +37,8 @@ def build_mmd_loss(y_true, y_pred, latent_mu, latent_sampling):
 
 
 def build_gram_matrix(s1, h):
-    K.cast(s1, dtype='float64')
-    K.cast(h, dtype='float64')
+    s1 = K.cast(s1, dtype='float64')
+    h = K.cast(h, dtype='float64')
 
     dim = K.shape(s1)[1]
     s1_size = K.shape(s1)[0]
@@ -54,33 +54,21 @@ def build_gram_matrix(s1, h):
     diag_2 = K.tile(K.reshape(diag, K.stack([1, s1_size])), K.stack([s1_size, 1]))
     normed_gram_matrix = gram_matrix / K.sqrt(diag_1 * diag_2) / (K.cast(s1_size**dim, dtype='float64'))
 
-    return gram_matrix
-
+    return normed_gram_matrix
+    #TODO: use tf.norm pour calculer la matrice
 
 def trace_normalize(A):
     trace_A = tf.linalg.trace(A)
     return A / trace_A
 
-def numpy_Renyi_entropy(input_A, alpha):
-    """Compute the Renyi entropy analogy of a matrix based on its eigenvalues
-
-    params:
-    A -- array-like, matrix
-    alpha -- float, Renyi entropy parameter
-    """
-    A = input_A
-    A[A*A.shape[0] < 1e-3] = 0
-    A_sparse = sparse.csc_matrix(A)
-    A_eigval,_ =  np.abs(sparse.linalg.eigsh(A_sparse)) + 1e-6
-    return np.float32(np.log(np.sum((A_eigval)**alpha)) / np.log(2) / (1 - alpha))
 
 def Renyi_entropy(A, alpha):
-    A_eigval, _ = tf.linalg.eigh(A)
-    Rent = K.log(K.sum(K.pow(A_eigval+1e-6, alpha))) / K.cast((1. - alpha) * K.log(2.), dtype='float64')
+    A_eigval,v = tf.linalg.eigh(A)
+    Rent = K.log(K.sum(K.pow(A_eigval+1e-8, alpha))) / K.cast((1. - alpha) * K.log(2.), dtype='float64')
     return K.cast(Rent, dtype='float32')
 
 
-def build_mutualinfo_loss(y_true, y_pred, cond_true, latent_mu, h=1, alpha=1.01, kappa=1.):
+def build_mutualinfo_loss(y_true, y_pred, cond_true, latent_mu, h=3, alpha=1.01, kappa=10.):
     sigma = h * K.pow(K.cast(K.shape(y_true)[0], dtype='float64'), -1. / (4. + 1.))
 
     if len(cond_true)>=2:

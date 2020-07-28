@@ -57,7 +57,7 @@ class AE_Model(ABC):
             os.makedirs(folder)
 
         for block in self.blocks:
-            filepath = os.path.join(folder, "%s.hdf5" %(block))
+            filepath = os.path.join(folder, "%s.h5" %(block))
             getattr(self, block).save(filepath = filepath)
 
         graph_params = copy.deepcopy(self.VAE_params.model_params.__dict__)
@@ -65,7 +65,7 @@ class AE_Model(ABC):
         with open(filename, 'w') as config_model_file:
             json.dump(graph_params, config_model_file, indent=4)
 
-    def load_model(self, out_dir = None, retrieve_model_architecture=True):
+    def load_model(self, out_dir = None, retrieve_model_architecture=True, training_params=None):
         if out_dir is None:
             out_dir = self.VAE_params.folder
 
@@ -80,11 +80,13 @@ class AE_Model(ABC):
                 setattr(self.VAE_params.model_params, k, v)
 
             self.VAE_params.set_training_params()
+            if training_params is not None:
+                self.VAE_params.training_params = training_params
 
             self.build_model(self.VAE_params)
 
         for block in self.blocks:
-            filepath = os.path.join(folder, "%s.hdf5" %(block))
+            filepath = os.path.join(folder, "%s.h5" %(block))
             getattr(self, block).load_weights(filepath = filepath)
 
 
@@ -139,7 +141,7 @@ class CVAE(AE_Model):
         else:
             x_hat = Lambda(eval(self.VAE_params.model_params.reparametrize), name="loglikelihood_layer")(dec_outputs)
 
-        self.model = Model(inputs=inputs, outputs=x_hat, name="cae")
+        self.model = Model(inputs=inputs, outputs=x_hat, name="cvae")
         self.model.summary()
         self.blocks.append("model")
 
