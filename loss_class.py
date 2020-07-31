@@ -10,7 +10,7 @@ class VAELoss():
     """
 
     def __init__(self, loss_weights={"recon_loss": 1.}, recon_loss="mse", custom_loss=None,
-                 options={"prior_mu":0., "log_prior_sigma":0., "kl_annealing":0., "alpha":1.01, "h":3.}):
+                 options={"prior_mu":0., "log_prior_sigma":0., "kl_annealing":0., "alpha":1.01, "scale":3.}):
         """
 
         :param loss_weights: dict, {<str>:<float>} name and associated weight of the considered loss
@@ -66,7 +66,7 @@ class VAELoss():
         dict_args_["info_loss"] = {"latent_mu": kwargs["latent_components"][0],
                                    "latent_sampling": kwargs["latent_sampling"]}
         dict_args_["mutualinfo_loss"] = {"cond_true": kwargs["cond_true"], "latent_mu": kwargs["latent_components"][0],
-                                         "h":self.options["h"], "alpha":self.options["alpha"]}
+                                         "sigma":self.options["scale"], "alpha":self.options["alpha"]}
 
         dict_args_["loglikelihood"] = {"log_sigma" : kwargs["dec_outputs"][1]}
 

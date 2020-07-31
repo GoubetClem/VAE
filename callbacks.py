@@ -34,18 +34,20 @@ def numpy_Gram_matrix(x, h):
 
     """
 
-    N = len(x)
     Dist_M = np.exp(-0.5 * np.square((x.reshape(-1, 1) - x.reshape(1, -1)) / h))  # / (np.sqrt(2*pi)*h)
     Norm = np.sqrt(np.diag(Dist_M).reshape(-1, 1) * np.diag(Dist_M).reshape(1, -1))
-    return Dist_M / (N * Norm)
+    return Dist_M / (Norm)
 
 
 def numpy_make_Gram_matrix(A, h=4):
-    gram_A = np.ones((A.shape[0], A.shape[0]))
-    for j in range(A.shape[1]):
-        gram_A = gram_A * numpy_Gram_matrix(A[:, j], h)
+    d0 = A.shape[0]
+    d1 = A.shape[1]
+    A_tiled1 = np.tile(A.reshape(d0,1,d1), [1,d0,1])
+    A_tiled2 = np.tile(A.reshape(1,d0,d1), [d0,1,1])
+    gram_A = np.exp(-0.5 *np.sum(np.square(A_tiled1 - A_tiled2 ), axis=-1) / h)
+    Norm = np.sqrt(np.diag(gram_A).reshape(-1, 1) * np.diag(gram_A).reshape(1, -1))
 
-    return gram_A
+    return gram_A / Norm / A.shape[0]
 
 
 def numpy_trace_normalize(A):
@@ -82,7 +84,7 @@ class InformationHistory(Callback):
 
     """
 
-    def __init__(self, h, alpha, dataset_train, infotoeval=["XZ", "XX'"], period=None, printlogger=False):
+    def __init__(self, scale, alpha, dataset_train, cond_insert, infotoeval=["XZ", "XX'"], period=None, printlogger=False):
 
         """
 
@@ -98,15 +100,14 @@ class InformationHistory(Callback):
         self.memory_epoch = 0
         self.infotoeval=infotoeval
         self.printlogger = printlogger
+        self.cond_insert = cond_insert
 
         if isinstance(dataset_train, list):
             x_inputs = dataset_train[0]
         else:
             x_inputs = dataset_train
 
-        N = x_inputs.shape[0]
-        M = x_inputs.shape[1]
-        self.sigma = Silverman_rule(h,N,M)
+        self.sigma = scale
         self.gram_x = numpy_make_Gram_matrix(x_inputs, self.sigma)
         self.data_entropy = numpy_Renyi_entropy(numpy_trace_normalize(self.gram_x), alpha)
 
@@ -146,7 +147,7 @@ class InformationHistory(Callback):
                 gram_xhat = numpy_make_Gram_matrix(x_hat, self.sigma)
 
             if "Emb" in "".join(self.infotoeval):
-                lays_emb = self.model.get_layer('encoder').get_layer('emb')
+                lays_emb = self.model.get_layer(self.cond_insert[0]).get_layer('cond_emb')
                 emb = lays_emb.predict(self.dataset_train[1:])
                 gram_emb = numpy_make_Gram_matrix(emb, self.sigma)
 

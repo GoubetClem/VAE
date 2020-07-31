@@ -22,6 +22,35 @@ class AE_Model(ABC):
         self.model = None
         self.blocks=[]
 
+
+    def maketrainable(self, modelpart=['encoder'], boolean=True):
+        for mpart in modelpart:
+            print("Change trainable status of {} layers".format(mpart))
+            assert(mpart in self.__dict__.keys())
+
+            input_names =  getattr(self, mpart).input_names
+            getattr(self, mpart).trainable = boolean
+            for layer in getattr(self, mpart).layers:
+                if (layer.name not in input_names):
+                    layer.trainable = boolean
+
+        if mpart not in ["encoder", "decoder"]:
+            for block in ["encoder", "decoder"]:
+                submodel_name = getattr(self, mpart).name
+                if submodel_name in [lay.name for lay in getattr(self, block).layers]:
+                    input_names = getattr(self, block).get_layer(submodel_name).input_names
+                    getattr(self, block).get_layer(submodel_name).trainable = boolean
+                    for layer in getattr(self, block).get_layer(submodel_name).layers:
+                        if (layer.name not in input_names):
+                            layer.trainable = boolean
+
+        self.save()
+        optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
+        self.model.compile(loss=self.model_loss, optimizer=optimizer, experimental_run_tf_function=False)
+
+        self.load_model(retrieve_model_architecture=False)
+
+
     @abstractmethod
     def build_model(self, *args, **kwargs):
         pass
@@ -57,8 +86,8 @@ class AE_Model(ABC):
             os.makedirs(folder)
 
         for block in self.blocks:
-            filepath = os.path.join(folder, "%s.h5" %(block))
-            getattr(self, block).save(filepath = filepath)
+            filepath = os.path.join(folder, "%s" %(block))
+            getattr(self, block).save_weights(filepath = filepath, save_format="tf")
 
         graph_params = copy.deepcopy(self.VAE_params.model_params.__dict__)
         filename = os.path.join(folder, self.VAE_params.name+'_model_architecture.json')
@@ -86,7 +115,7 @@ class AE_Model(ABC):
             self.build_model(self.VAE_params)
 
         for block in self.blocks:
-            filepath = os.path.join(folder, "%s.h5" %(block))
+            filepath = os.path.join(folder, "%s" %(block))
             getattr(self, block).load_weights(filepath = filepath)
 
 
@@ -115,6 +144,11 @@ class CVAE(AE_Model):
         inputs = [x_inputs] + c_inputs
 
         # Setting the AE architecture
+        if self.VAE_params.model_params.with_embedding:
+            self.cond_embedding = EmbeddingBlock_model(input_dims=self.VAE_params.model_params.cond_dims,
+                                                     emb_dims=self.VAE_params.model_params.emb_dims,
+                                                     activation="relu", name="cond_emb", has_BN=False)
+
         if custom_encoder_model is not None:
             self.encoder = custom_encoder_model
         else:
@@ -146,8 +180,8 @@ class CVAE(AE_Model):
         self.blocks.append("model")
 
         if self.VAE_params.model_params.with_embedding:
-            self.to_embedding.summary()
-            self.blocks.append("to_embedding")
+            self.cond_embedding.summary()
+            self.blocks.append("cond_embedding")
 
         self.encoder.summary()
         self.blocks.append("encoder")
@@ -159,14 +193,14 @@ class CVAE(AE_Model):
         optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
 
         if self.VAE_params.model_params.with_embedding:
-            emb_outputs = self.to_embedding(c_inputs)
-            model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
+            emb_outputs = self.cond_embedding(c_inputs)
+            self.model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
                                                                              latent_sampling=dec_inputs[0],
                                                                              cond_true=c_inputs,
                                                                                  dec_outputs = dec_outputs,
                                                                              embedding_outputs = emb_outputs)
         else:
-            model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
+            self.model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
                                                                             latent_sampling=dec_inputs[0],
                                                                             cond_true=c_inputs,
                                                                                  dec_outputs = dec_outputs)
@@ -175,7 +209,7 @@ class CVAE(AE_Model):
         [print(loss_key, " : ",
                self.VAE_params.training_params.loss.loss_weights[loss_key]) for loss_key in self.VAE_params.training_params.loss.losses.keys()]
 
-        self.model.compile(loss=model_loss, optimizer=optimizer, experimental_run_tf_function=False)
+        self.model.compile(loss=self.model_loss, optimizer=optimizer, experimental_run_tf_function=False)
 
 
 

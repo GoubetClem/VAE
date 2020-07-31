@@ -177,11 +177,9 @@ def build_encoder_model(self, model_params):
     inputs = [x_inputs] + c_inputs
 
     # Creation of the encoder block
-    if len(c_inputs)>=1:
+    if len(c_inputs)>=1 and 'encoder' in model_params.cond_insert:
         if model_params.with_embedding:
-            self.to_embedding = EmbeddingBlock_model(input_dims=model_params.cond_dims, emb_dims=model_params.emb_dims,
-                                               activation="relu",name="emb", has_BN=False)
-            cond_enc_inputs = self.to_embedding(c_inputs)
+            cond_enc_inputs = self.cond_embedding(c_inputs)
         else:
             if len(c_inputs) >=2:
                 cond_enc_inputs = concatenate(c_inputs, name="concat_cond")
@@ -227,9 +225,9 @@ def build_decoder_model(self, model_params):
 
     inputs = [encoded_inputs] + c_inputs
 
-    if len(c_inputs)>=1:
+    if len(c_inputs)>=1 and 'decoder' in model_params.cond_insert:
         if model_params.with_embedding:
-            cond_dec_inputs = self.to_embedding(c_inputs)
+            cond_dec_inputs = self.cond_embedding(c_inputs)
         else:
             if len(c_inputs) >=2:
                 cond_dec_inputs = concatenate(c_inputs, name="concat_cond")

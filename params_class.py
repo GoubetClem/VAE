@@ -8,6 +8,7 @@ class ModelParams():
     """
     def __init__(self):
         self.cond_dims = []
+        self.cond_insert = ['encoder', 'decoder']
         self.with_embedding = False
         self.emb_dims = []
         self.reparametrize = "GaussianSampling"

@@ -45,17 +45,15 @@ def build_gram_matrix(s1, h):
 
     tiled_s1 = K.tile(K.reshape(s1, K.stack([s1_size, 1, dim])), K.stack([1, s1_size, 1]))
     tiled_s2 = K.tile(K.reshape(s1, K.stack([1, s1_size, dim])), K.stack([s1_size, 1, 1]))
-    Dist_M = K.exp(-0.5 * K.square(K.cast((tiled_s1 - tiled_s2), dtype='float64') / h))
-
-    gram_matrix = K.prod(Dist_M, axis=-1)
+    gram_matrix = K.exp(-0.5 * K.sum(K.square(K.cast((tiled_s1 - tiled_s2), dtype='float64')), axis=-1) / h)
 
     diag = tf.linalg.diag_part(gram_matrix)
     diag_1 = K.tile(K.reshape(diag, K.stack([s1_size, 1])), K.stack([1, s1_size]))
     diag_2 = K.tile(K.reshape(diag, K.stack([1, s1_size])), K.stack([s1_size, 1]))
-    normed_gram_matrix = gram_matrix / K.sqrt(diag_1 * diag_2) / (K.cast(s1_size**dim, dtype='float64'))
+    normed_gram_matrix = gram_matrix / K.sqrt(diag_1 * diag_2) / (K.cast(s1_size, dtype='float64'))
 
     return normed_gram_matrix
-    #TODO: use tf.norm pour calculer la matrice
+    #TODO: use tf.norm ou tfp.kernel pour calculer la matrice
 
 def trace_normalize(A):
     trace_A = tf.linalg.trace(A)
@@ -68,8 +66,7 @@ def Renyi_entropy(A, alpha):
     return K.cast(Rent, dtype='float32')
 
 
-def build_mutualinfo_loss(y_true, y_pred, cond_true, latent_mu, h=3, alpha=1.01, kappa=10.):
-    sigma = h * K.pow(K.cast(K.shape(y_true)[0], dtype='float64'), -1. / (4. + 1.))
+def build_mutualinfo_loss(y_true, y_pred, cond_true, latent_mu, sigma=3, alpha=1.01, kappa=10.):
 
     if len(cond_true)>=2:
         cond_in = K.concatenate(cond_true, axis=-1)
@@ -88,4 +85,4 @@ def build_mutualinfo_loss(y_true, y_pred, cond_true, latent_mu, h=3, alpha=1.01,
                Renyi_entropy(trace_normalize(gram_x), alpha) -\
                Renyi_entropy(trace_normalize(gram_x * gram_z), alpha)
 
-    return K.cast(1. / input_MI + kappa * cond_MI, dtype='float32')
+    return K.cast(1. / kappa / input_MI + kappa * cond_MI, dtype='float32')
