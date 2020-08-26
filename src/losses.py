@@ -1,7 +1,6 @@
 # A file where to define losses
 import tensorflow as tf, numpy as np
 from tensorflow.keras import backend as K
-from scipy import sparse
 
 
 @tf.function

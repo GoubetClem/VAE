@@ -1,7 +1,5 @@
 from sklearn.model_selection import cross_validate
-from sklearn.model_selection import cross_val_score
 import numpy as np
-import pandas as pd
 
 
 def disentanglement_quantification(x_reduced, factorMatrix, factorDesc, algorithm='RandomForest', cv=3,

@@ -1,4 +1,4 @@
-from losses import *
+from src.losses import *
 import tensorflow as tf
 from tensorflow.keras import backend as K
 from tensorflow.keras.losses import MeanAbsoluteError, MeanSquaredError, BinaryCrossentropy

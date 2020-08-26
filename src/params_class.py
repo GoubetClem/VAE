@@ -1,6 +1,6 @@
 import os
 from tensorflow.keras.optimizers import Adam
-from loss_class import *
+from src.loss_class import *
 
 class ModelParams():
     """

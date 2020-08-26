@@ -5,8 +5,8 @@ import copy
 import matplotlib.pyplot as plt
 
 from tensorflow.keras.layers import Lambda
-from reparametrize_functions import *
-from AE_blocks import *
+from src.reparametrize_functions import *
+from src.AE_blocks import *
 
 
 class AE_Model(ABC):
@@ -133,6 +133,8 @@ class CVAE(AE_Model):
         :return: build graph and compile model in the CVAE Class
         """
         self.VAE_params.model_params = VAE_params.model_params
+        if self.VAE_params.model_params.with_embedding :
+            assert(len(self.VAE_params.model_params.cond_dims) + 1 == len(self.VAE_params.model_params.emb_dims))
 
         # getting the graph inputs
         x_inputs = Input(shape=(self.VAE_params.model_params.input_dims,), name="x_inputs")
