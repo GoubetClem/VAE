@@ -162,7 +162,7 @@ class CVAE(AE_Model):
         # Model AE graph
         enc_outputs = self.encoder(inputs)
 
-        if self.VAE_params.model_params.nb_latent_components ==1:
+        if (self.VAE_params.model_params.nb_latent_components == 1):
             dec_inputs = [enc_outputs] + c_inputs
         else:
             z = Lambda(eval(self.VAE_params.model_params.reparametrize), name="reparametrizing_layer")(enc_outputs)

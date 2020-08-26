@@ -1,5 +1,6 @@
 import tensorflow.keras.backend as K
 from tensorflow.keras.callbacks import Callback
+from tensorflow.keras import Model
 from scipy import sparse
 import numpy as np
 
@@ -84,7 +85,7 @@ class InformationHistory(Callback):
 
     """
 
-    def __init__(self, scale, alpha, dataset_train, cond_insert, infotoeval=["XZ", "XX'"], period=None, printlogger=False):
+    def __init__(self, scale, alpha, dataset_train, cond_insert, infotoeval=["XZ", "XX'"], deeplayerstoeval=None, period=None, printlogger=False):
 
         """
 
@@ -101,6 +102,7 @@ class InformationHistory(Callback):
         self.infotoeval=infotoeval
         self.printlogger = printlogger
         self.cond_insert = cond_insert
+        self.deeplayerstoeval = deeplayerstoeval
 
         if isinstance(dataset_train, list):
             x_inputs = dataset_train[0]
@@ -122,6 +124,9 @@ class InformationHistory(Callback):
         self.MI={}
         for key in infotoeval:
             self.MI[key] = []
+        if deeplayerstoeval is not None:
+            for key in deeplayerstoeval.keys():
+                self.MI[key] = []
 
 
     def on_epoch_end(self, epoch, logs={}):
@@ -181,6 +186,25 @@ class InformationHistory(Callback):
                     numpy_trace_normalize(gram_z), self.alpha) + numpy_Renyi_entropy(
                     numpy_trace_normalize(gram_emb), self.alpha)- numpy_Renyi_entropy(
                     numpy_trace_normalize(gram_z * gram_emb), self.alpha))
+
+            if self.deeplayerstoeval is not None:
+                for key in self.deeplayerstoeval.keys():
+                    inputs = self.model.get_layer('encoder').input
+                    lay_1 = self.model.get_layer('encoder').get_layer(index = self.deeplayerstoeval[key][0]).output
+                    model_1 = Model(inputs=inputs, outputs=lay_1)
+                    T_1 = model_1.predict(self.dataset_train)
+                    lay_2 = self.model.get_layer('decoder').get_layer(index = self.deeplayerstoeval[key][1]).output
+                    model_2 = Model(inputs=inputs, outputs=lay_2)
+                    T_2 = model_2.predict(self.dataset_train)
+
+                    gram_1 = numpy_make_Gram_matrix(T_1, self.sigma)
+                    gram_2 = numpy_make_Gram_matrix(T_2, self.sigma)
+                    self.MI[key].append(numpy_Renyi_entropy(
+                        numpy_trace_normalize(gram_1), self.alpha) + numpy_Renyi_entropy(
+                        numpy_trace_normalize(gram_2), self.alpha) - numpy_Renyi_entropy(
+                        numpy_trace_normalize(gram_1 * gram_2), self.alpha))
+
+
 
             if self.printlogger:
                 print("Mutual informations for epoch {} are ".format(

@@ -127,11 +127,11 @@ def EmbeddingBlock_model(input_dims, emb_dims, has_BN=False, activation="relu", 
     :return: TF Model, with embedded inputs concatenated with not changed inputs
     """
     embeddings = []
-    not_to_emb =[]
-    cond_inputs= []
+    not_to_emb = []
+    cond_inputs = []
 
     for i, cond_d in enumerate(input_dims):
-        c_inputs = Input(shape=(cond_d,), name = "emb_input_cond_{}".format(i))
+        c_inputs = Input(shape=(cond_d,), name="emb_input_cond_{}".format(i))
         cond_inputs.append(c_inputs)
         if len(emb_dims[i]) == 0:
             not_to_emb.append(c_inputs)
@@ -157,6 +157,7 @@ def EmbeddingBlock_model(input_dims, emb_dims, has_BN=False, activation="relu", 
 
     return Model(inputs=cond_inputs, outputs=emb_outputs, name=name)
 
+
 def build_encoder_model(self, model_params):
     """
 
@@ -177,11 +178,11 @@ def build_encoder_model(self, model_params):
     inputs = [x_inputs] + c_inputs
 
     # Creation of the encoder block
-    if len(c_inputs)>=1 and 'encoder' in model_params.cond_insert:
+    if len(c_inputs) >= 1 and 'encoder' in model_params.cond_insert:
         if model_params.with_embedding:
             cond_enc_inputs = self.cond_embedding(c_inputs)
         else:
-            if len(c_inputs) >=2:
+            if len(c_inputs) >= 2:
                 cond_enc_inputs = concatenate(c_inputs, name="concat_cond")
             else:
                 cond_enc_inputs = c_inputs
@@ -200,12 +201,13 @@ def build_encoder_model(self, model_params):
             ensemble[i].append(Dense(units=model_params.latent_dims, activation='linear',
                                      name="latent_dense_{}_{}".format(idx,i+1))(enc_x))
 
-    if model_params.nb_encoder_ensemble ==1:
+    if model_params.nb_encoder_ensemble == 1:
         enc_outputs = [ens_list[0] for ens_list in ensemble]
     else:
         enc_outputs = [average(ens_list) for ens_list in ensemble]
 
     return Model(inputs=inputs, outputs=enc_outputs, name="encoder")
+
 
 def build_decoder_model(self, model_params):
     """
