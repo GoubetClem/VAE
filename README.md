@@ -1,3 +1,5 @@
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/GoubetClem/VAE.git/master)
+
 # VAE ToolBox
 
 Intent to configure a modulatory method to build and train variational autoencoders based on custom architectures and losses. 
