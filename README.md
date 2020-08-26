@@ -10,3 +10,10 @@ Main features:
 * Various losses combination available
 * Metrics of disentanglement
 * Callback on the analysis of leanrt information in hidden layers of the model
+
+# Licence information
+Copyright 2020 RTE(France)
+
+RTE: http://www.rte-france.com
+
+This Source Code is subject to the terms of the GNU Lesser General Public License v3.0. If a copy of the LGPL-v3 was not distributed with this file, You can obtain one at https://www.gnu.org/licenses/lgpl-3.0.fr.html.
