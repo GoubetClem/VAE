@@ -25,6 +25,9 @@ class ModelParams():
         self.decoder_dims = [12,24,48,48]
         self.decoder_type = "InceptionBlock_model"
 
+        self.context_dims=None
+        self.leapae_dims=[self.latent_dims, self.context_dims]
+
 
 class TrainingParams():
     """

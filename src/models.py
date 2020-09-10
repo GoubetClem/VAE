@@ -4,7 +4,7 @@ import json
 import copy
 import matplotlib.pyplot as plt
 
-from tensorflow.keras.layers import Lambda
+from tensorflow.keras.layers import Lambda, Multiply
 from src.reparametrize_functions import *
 from src.AE_blocks import *
 
@@ -139,11 +139,15 @@ class CVAE(AE_Model):
         # getting the graph inputs
         x_inputs = Input(shape=(self.VAE_params.model_params.input_dims,), name="x_inputs")
         c_inputs = []
+        context_inputs = []
 
         for i, c_dims in enumerate(self.VAE_params.model_params.cond_dims):
             c_inputs.append(Input(shape=(c_dims,), name="cond_inputs_{}".format(i)))
 
-        inputs = [x_inputs] + c_inputs
+        if self.VAE_params.model_params.context_dims is not None:
+            context_inputs = [Input(shape=(self.VAE_params.model_params.context_dims,), name="context_inputs")]
+
+        inputs = [x_inputs] + c_inputs + context_inputs
 
         # Setting the AE architecture
         if self.VAE_params.model_params.with_embedding:
@@ -162,6 +166,7 @@ class CVAE(AE_Model):
             self.decoder = build_decoder_model(self, model_params=self.VAE_params.model_params)
 
         # Model AE graph
+        #encoding
         enc_outputs = self.encoder(inputs)
 
         if (self.VAE_params.model_params.nb_latent_components == 1):
@@ -170,6 +175,21 @@ class CVAE(AE_Model):
             z = Lambda(eval(self.VAE_params.model_params.reparametrize), name="reparametrizing_layer")(enc_outputs)
             dec_inputs = [z] + c_inputs
 
+        #leap part with context
+        if self.VAE_params.model_params.context_dims is not None:
+            latent_coord = dec_inputs[0]
+            for i, tau_dims in enumerate(self.VAE_params.model_params.leapae_dims):
+                latent_coord = Dense(units=tau_dims, activation="relu", name="enc_context_{}".format(i))(latent_coord)
+            leap_center = Dense(units=self.VAE_params.model_params.context_dims, activation="linear",
+                                name="context_latent")(latent_coord)
+            latent_coord = Multiply()([leap_center, context_inputs])
+            for i, tau_dims in enumerate(reversed(self.VAE_params.model_params.leapae_dims)):
+                latent_coord = Dense(units=tau_dims, activation="relu", name="enc_context_{}".format(i))(latent_coord)
+            latent_coord = Dense(units=self.VAE_params.model_params.latent_dims, activation="linear",
+                                name="latent_context")(latent_coord)
+            dec_inputs = [latent_coord] + c_inputs
+
+        #decoding
         dec_outputs = self.decoder(dec_inputs)
 
         if self.VAE_params.model_params.nb_decoder_outputs == 1:
