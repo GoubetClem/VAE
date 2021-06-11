@@ -1,21 +1,18 @@
 # A file where to define losses
-import tensorflow as tf, numpy as np
+import tensorflow as tf
 from tensorflow.keras import backend as K
+from tensorflow.keras.losses import Loss
 
-
-@tf.function
-def build_kl_loss(y_true, y_pred, latent_components, prior_mu=K.variable(0.), log_prior_sigma=K.variable(0.),
-                  annealing_value = K.variable(0.)):
+def build_kl_loss(y_true, y_pred, latent_components, prior_mu=tf.Variable(0.), log_prior_sigma=tf.Variable(0.),
+                  annealing_value = tf.Variable(0.)):
     latent_mu, latent_log_sigma = latent_components
-    kl = K.mean(0.5 * K.sum((K.exp(latent_log_sigma) + K.square(latent_mu - prior_mu)) / K.exp(log_prior_sigma)
+    kl = tf.math.reduce_mean(0.5 * tf.math.reduce_sum((tf.math.exp(latent_log_sigma) + tf.math.square(latent_mu - prior_mu)) / tf.math.exp(log_prior_sigma)
                        - 1. - latent_log_sigma + log_prior_sigma, axis=-1))
-    return K.abs(kl - annealing_value)
+    return tf.math.abs(kl - annealing_value)
 
-@tf.function
 def build_gaussian_loglikelihood(y_true, y_pred, log_sigma=K.variable(0.)):
     return K.mean(0.5 * (log_sigma + K.square(y_true-y_pred) / K.exp(log_sigma)))
 
-@tf.function
 def kde(s1, s2, h=None):
     dim = K.shape(s1)[1]
     s1_size = K.shape(s1)[0]
@@ -27,7 +24,6 @@ def kde(s1, s2, h=None):
     return K.exp(-0.5 * K.sum(K.square(tiled_s1 - tiled_s2), axis=-1) / h)
 
 
-@tf.function
 def build_mmd_loss(y_true, y_pred, latent_mu, latent_sampling):
     q_kernel = kde(latent_mu, latent_mu)
     p_kernel = kde(latent_sampling, latent_sampling)

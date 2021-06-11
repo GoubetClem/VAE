@@ -79,22 +79,19 @@ class VAELoss():
         return dict_args_
 
 
-    def _get_loss_function(self, **kwargs):
+    def _get_loss_function(self, y_true, y_pred, **kwargs):
         """
         DO NOT TOUCH THIS
 
         """
         dict_ = self.get_dict(**kwargs)
-
-        def vae_loss(y_true, y_pred):
-            loss_call = []
-            for key in self.losses.keys():
+        vae_loss = 0.
+        for key in self.losses.keys():
+            if key != "recon_loss":
                 this_kwargs = {}
                 if key in dict_:
                     this_kwargs = dict_[key]
                 loss_key = self.losses[key]
-                loss_call.append(self.loss_weights[key] * loss_key(y_true=y_true, y_pred=y_pred, **this_kwargs))
-
-            return K.sum(K.stack(loss_call))
+                vae_loss += self.loss_weights[key] * loss_key(y_true=y_true, y_pred=y_pred, **this_kwargs)
 
         return vae_loss

@@ -182,9 +182,9 @@ class CVAE(AE_Model):
                 latent_coord = Dense(units=tau_dims, activation="relu", name="enc_context_{}".format(i))(latent_coord)
             leap_center = Dense(units=self.VAE_params.model_params.context_dims, activation="linear",
                                 name="context_latent")(latent_coord)
-            latent_coord = Multiply()([leap_center, context_inputs])
+            latent_coord = Multiply()([leap_center, context_inputs[0]])
             for i, tau_dims in enumerate(reversed(self.VAE_params.model_params.leapae_dims)):
-                latent_coord = Dense(units=tau_dims, activation="relu", name="enc_context_{}".format(i))(latent_coord)
+                latent_coord = Dense(units=tau_dims, activation="relu", name="dec_context_{}".format(i))(latent_coord)
             latent_coord = Dense(units=self.VAE_params.model_params.latent_dims, activation="linear",
                                 name="latent_context")(latent_coord)
             dec_inputs = [latent_coord] + c_inputs
@@ -198,6 +198,19 @@ class CVAE(AE_Model):
             x_hat = Lambda(eval(self.VAE_params.model_params.reparametrize), name="loglikelihood_layer")(dec_outputs)
 
         self.model = Model(inputs=inputs, outputs=x_hat, name="cvae")
+
+        vae_args = dict(
+            latent_components=enc_outputs,
+            latent_sampling=dec_inputs[0],
+            cond_true=c_inputs,
+            y_true = x_inputs,
+            y_pred = x_hat,
+            dec_outputs = dec_outputs
+        )
+        if self.VAE_params.model_params.with_embedding:
+            vae_args.update(dict(embedding_outputs=self.cond_embedding(c_inputs)))
+
+
         self.model.summary()
         self.blocks.append("model")
 
@@ -213,25 +226,27 @@ class CVAE(AE_Model):
 
         # Training objectives settings
         optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
-
-        if self.VAE_params.model_params.with_embedding:
-            emb_outputs = self.cond_embedding(c_inputs)
-            self.model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
-                                                                             latent_sampling=dec_inputs[0],
-                                                                             cond_true=c_inputs,
-                                                                                 dec_outputs = dec_outputs,
-                                                                             embedding_outputs = emb_outputs)
-        else:
-            self.model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
-                                                                            latent_sampling=dec_inputs[0],
-                                                                            cond_true=c_inputs,
-                                                                                 dec_outputs = dec_outputs)
+        self.model.add_loss(self.VAE_params.training_params.loss._get_loss_function(**vae_args))
+        # if self.VAE_params.model_params.with_embedding:
+        #     emb_outputs = self.cond_embedding(c_inputs)
+        #     self.model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
+        #                                                                      latent_sampling=dec_inputs[0],
+        #                                                                      cond_true=c_inputs,
+        #                                                                          dec_outputs = dec_outputs,
+        #                                                                      embedding_outputs = emb_outputs)
+        # else:
+        #     self.model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
+        #                                                                     latent_sampling=dec_inputs[0],
+        #                                                                     cond_true=c_inputs,
+        #                                                                          dec_outputs = dec_outputs)
 
         print("Losses and associated weight involved in the model: ")
         [print(loss_key, " : ",
                self.VAE_params.training_params.loss.loss_weights[loss_key]) for loss_key in self.VAE_params.training_params.loss.losses.keys()]
 
-        self.model.compile(loss=self.model_loss, optimizer=optimizer, experimental_run_tf_function=False)
+        self.model.compile(loss=self.VAE_params.training_params.loss.losses["recon_loss"],
+                           loss_weights=self.VAE_params.training_params.loss.loss_weights["recon_loss"],
+                           optimizer=optimizer, experimental_run_tf_function=False)
 
 
 

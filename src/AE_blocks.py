@@ -3,6 +3,8 @@ from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Acti
     Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Flatten
 from tensorflow.keras import Model, Input
 from tensorflow.keras import backend as K
+from src.reparametrize_functions import *
+
 
 class AE_blocks():
     """
