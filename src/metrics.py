@@ -56,7 +56,7 @@ def disentanglement_quantification(x_reduced, factorMatrix, factorDesc, algorith
 
         if normalize_information:
             min_info = np.mean(cv_results_random['test_score'])
-            results_info = (np.mean(cv_results['test_score']) - min_info) / (1 - min_info)
+            results_info = np.nan_to_num((np.mean(cv_results['test_score']) - min_info) / (1 - min_info))
         else:
             results_info = np.mean(cv_results['test_score'])
 

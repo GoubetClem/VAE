@@ -4,7 +4,7 @@ import json
 import copy
 import matplotlib.pyplot as plt
 
-from tensorflow.keras.layers import Lambda, Multiply
+from tensorflow.keras.layers import Lambda
 from src.reparametrize_functions import *
 from src.AE_blocks import *
 
@@ -71,6 +71,7 @@ class AE_Model(ABC):
         plt.title('model loss')
         plt.ylabel('loss')
         plt.xlabel('epoch')
+        plt.yscale('log')
         plt.legend(['train', 'test'], loc='upper left')
         plt.show()
 
@@ -146,7 +147,6 @@ class CVAE(AE_Model):
 
         if self.VAE_params.model_params.context_dims is not None:
             context_inputs = [Input(shape=(self.VAE_params.model_params.context_dims,), name="context_inputs")]
-
         inputs = [x_inputs] + c_inputs + context_inputs
 
         # Setting the AE architecture
@@ -174,20 +174,6 @@ class CVAE(AE_Model):
         else:
             z = Lambda(eval(self.VAE_params.model_params.reparametrize), name="reparametrizing_layer")(enc_outputs)
             dec_inputs = [z] + c_inputs
-
-        #leap part with context
-        if self.VAE_params.model_params.context_dims is not None:
-            latent_coord = dec_inputs[0]
-            for i, tau_dims in enumerate(self.VAE_params.model_params.leapae_dims):
-                latent_coord = Dense(units=tau_dims, activation="relu", name="enc_context_{}".format(i))(latent_coord)
-            leap_center = Dense(units=self.VAE_params.model_params.context_dims, activation="linear",
-                                name="context_latent")(latent_coord)
-            latent_coord = Multiply()([leap_center, context_inputs[0]])
-            for i, tau_dims in enumerate(reversed(self.VAE_params.model_params.leapae_dims)):
-                latent_coord = Dense(units=tau_dims, activation="relu", name="dec_context_{}".format(i))(latent_coord)
-            latent_coord = Dense(units=self.VAE_params.model_params.latent_dims, activation="linear",
-                                name="latent_context")(latent_coord)
-            dec_inputs = [latent_coord] + c_inputs
 
         #decoding
         dec_outputs = self.decoder(dec_inputs)
@@ -226,19 +212,8 @@ class CVAE(AE_Model):
 
         # Training objectives settings
         optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
-        self.model.add_loss(self.VAE_params.training_params.loss._get_loss_function(**vae_args))
-        # if self.VAE_params.model_params.with_embedding:
-        #     emb_outputs = self.cond_embedding(c_inputs)
-        #     self.model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
-        #                                                                      latent_sampling=dec_inputs[0],
-        #                                                                      cond_true=c_inputs,
-        #                                                                          dec_outputs = dec_outputs,
-        #                                                                      embedding_outputs = emb_outputs)
-        # else:
-        #     self.model_loss = self.VAE_params.training_params.loss._get_loss_function(latent_components=enc_outputs,
-        #                                                                     latent_sampling=dec_inputs[0],
-        #                                                                     cond_true=c_inputs,
-        #                                                                          dec_outputs = dec_outputs)
+        if len(list(self.VAE_params.training_params.loss.loss_weights.keys()))> 1:
+            self.model.add_loss(self.VAE_params.training_params.loss._get_loss_function(**vae_args))
 
         print("Losses and associated weight involved in the model: ")
         [print(loss_key, " : ",

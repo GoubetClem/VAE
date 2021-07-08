@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Activation, average,\
-    Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Flatten
+    Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Flatten, Add, Multiply
 from tensorflow.keras import Model, Input
 from tensorflow.keras import backend as K
 from src.reparametrize_functions import *
@@ -160,6 +160,26 @@ def EmbeddingBlock_model(input_dims, emb_dims, has_BN=False, activation="relu", 
     return Model(inputs=cond_inputs, outputs=emb_outputs, name=name)
 
 
+def build_leap_block(latent_dims, context_dims, block_dims, name="leap_block"):
+    latent_inputs = Input(shape=(latent_dims,), name="latentcoord_inputs")
+    context_inputs = Input(shape=(context_dims,), name="context_inputs")
+    block_inputs= [latent_inputs, context_inputs]
+    latent_coord = latent_inputs
+
+    for i, tau_dims in enumerate(block_dims):
+        latent_coord = Dense(units=tau_dims, activation="relu", name="enc_context_{}".format(i))(latent_coord)
+    leap_center = Dense(units=context_dims, activation="linear",
+                        name="context_latent")(latent_coord)
+    latent_coord = Multiply()([leap_center, context_inputs])
+    for i, tau_dims in enumerate(reversed(block_dims)):
+        latent_coord = Dense(units=tau_dims, activation="relu", name="dec_context_{}".format(i))(latent_coord)
+    latent_coord = Dense(units=latent_dims, activation="linear",
+                         name="latent_context")(latent_coord)
+    new_coord = Add()([latent_coord, latent_inputs])
+
+    return Model(inputs = block_inputs, outputs = new_coord, name=name)
+
+
 def build_encoder_model(self, model_params):
     """
 
@@ -178,6 +198,10 @@ def build_encoder_model(self, model_params):
         c_inputs.append(Input(shape=(c_dims,), name="enc_cond_inputs_{}".format(i)))
 
     inputs = [x_inputs] + c_inputs
+
+    if model_params.context_dims is not None:
+        context_inputs = Input(shape=(self.VAE_params.model_params.context_dims,), name="context_inputs")
+        inputs += [context_inputs]
 
     # Creation of the encoder block
     if len(c_inputs) >= 1 and 'encoder' in model_params.cond_insert:
@@ -207,6 +231,11 @@ def build_encoder_model(self, model_params):
         enc_outputs = [ens_list[0] for ens_list in ensemble]
     else:
         enc_outputs = [average(ens_list) for ens_list in ensemble]
+
+    if model_params.context_dims is not None:
+        leap_block = build_leap_block(model_params.latent_dims, model_params.context_dims,
+                                      model_params.leapae_dims)
+        enc_outputs[0] = leap_block([enc_outputs[0], context_inputs])
 
     return Model(inputs=inputs, outputs=enc_outputs, name="encoder")
 
