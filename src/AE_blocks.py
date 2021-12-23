@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Activation, average,\
-    Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Flatten, Add, Multiply
+    Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Flatten, Add, Multiply, Lambda
 from tensorflow.keras import Model, Input
 from tensorflow.keras import backend as K
 from src.reparametrize_functions import *
@@ -92,8 +92,6 @@ class AE_blocks():
 
         return Model(inputs=[x_inputs] + cond_inputs, outputs=x, name=self.name)
 
-    # TODO TargetNNBlockCond
-
 
     def InceptionBlock_model(self, cond_dims, **kwargs):
         """
@@ -163,7 +161,7 @@ def EmbeddingBlock_model(input_dims, emb_dims, has_BN=False, activation="relu", 
 def build_leap_block(latent_dims, context_dims, block_dims, name="leap_block"):
     latent_inputs = Input(shape=(latent_dims,), name="latentcoord_inputs")
     context_inputs = Input(shape=(context_dims,), name="context_inputs")
-    block_inputs= [latent_inputs, context_inputs]
+    block_inputs = [latent_inputs, context_inputs]
     latent_coord = latent_inputs
 
     for i, tau_dims in enumerate(block_dims):
@@ -177,10 +175,10 @@ def build_leap_block(latent_dims, context_dims, block_dims, name="leap_block"):
                          name="latent_context")(latent_coord)
     new_coord = Add()([latent_coord, latent_inputs])
 
-    return Model(inputs = block_inputs, outputs = new_coord, name=name)
+    return Model(inputs=block_inputs, outputs=new_coord, name=name)
 
 
-def build_encoder_model(self, model_params):
+def build_encoder_model(self, model_params, name= ""):
     """
 
     :param self: self of the CVAE Class
@@ -237,7 +235,7 @@ def build_encoder_model(self, model_params):
                                       model_params.leapae_dims)
         enc_outputs[0] = leap_block([enc_outputs[0], context_inputs])
 
-    return Model(inputs=inputs, outputs=enc_outputs, name="encoder")
+    return Model(inputs=inputs, outputs=enc_outputs, name="encoder"+name)
 
 
 def build_decoder_model(self, model_params):
@@ -288,4 +286,44 @@ def build_decoder_model(self, model_params):
         dec_outputs = [average(ens_list) for ens_list in ensemble]
 
     return Model(inputs=inputs, outputs=dec_outputs, name="decoder")
+
+
+def build_guidedencoder_model(self, model_params, x_encoder, list_condencoder):
+    c_inputs = []
+    cx_inputs = []
+    for i, input_dim in enumerate(model_params.input_dims):
+        if i == 0:
+            x_inputs = [Input(shape=(input_dim,), name=f"inputs_{i}")]
+        else:
+            cx_inputs.append(Input(shape=(input_dim,), name=f"inputs_{i}"))
+
+    for i, c_dims in enumerate(model_params.cond_dims):
+        c_inputs.append(Input(shape=(c_dims,), name="enc_cond_inputs_{}".format(i)))
+
+    inputs = x_inputs + cx_inputs + c_inputs
+    enc_inputs = x_inputs + c_inputs
+
+    if model_params.context_dims is not None:
+        context_inputs = Input(shape=(self.VAE_params.model_params.context_dims,), name="context_inputs")
+        inputs += [context_inputs]
+        enc_inputs += [context_inputs]
+
+    list_latent_cond = []
+
+    x_encoded = x_encoder(enc_inputs)
+    x_encoded[0] = Lambda(lambda z: z*0, name="neutralized_mu_encoded")(x_encoded[0])
+
+    for i, c_encoder in enumerate(list_condencoder):
+        cond_nb = Lambda(lambda x: tf.one_hot(tf.constant(i,dtype='int32',shape=(1,)),
+                                              len(list_condencoder)), name=f"latent_dense_mu_c_class_{i}")(cx_inputs[i])
+
+        c_encoded = c_encoder(cx_inputs[i])
+        c_latent_dim = Dense(units=model_params.latent_dims, activation='hard_sigmoid',
+                             name= "latent_dense_mu_c_dim_{}".format(i))(cond_nb)
+
+        list_latent_cond.append(Multiply()([c_encoded, c_latent_dim]))
+
+    x_encoded[0] = Add()([x_encoded[0]]+list_latent_cond)
+
+    return Model(inputs=inputs, outputs=x_encoded, name="guided_encoder")
 
