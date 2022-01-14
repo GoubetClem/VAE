@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, BatchNormalization, concatenate, Activation, average,\
-    Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Flatten, Add, Multiply, Lambda
+    Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Flatten, Add, Multiply, Lambda, LSTM
 from tensorflow.keras import Model, Input
 from tensorflow.keras import backend as K
 from src.reparametrize_functions import *
@@ -78,6 +78,33 @@ class AE_blocks():
 
         x = MaxPooling1D(pool_size= 3, name="pooling_layer")(x)
         x = Flatten(name = "global_ravel")(x)
+
+        cond_inputs = []
+
+        for c_dims in cond_dims:
+            cond_inputs.append(Input(shape=(c_dims,), name="cond_input_" + self.name))
+            x = concatenate([x, cond_inputs[-1]])
+
+        for idx, layer_dim in enumerate(self.NN_dims):
+            x = Dense(units=layer_dim, activation=self.activation, name=self.name + "_dense_cond_{}".format(idx))(x)
+            for c_input in cond_inputs:
+                x = concatenate([x, c_input])
+
+        return Model(inputs=[x_inputs] + cond_inputs, outputs=x, name=self.name)
+
+
+    def NNBlockLSTM_model(self, cond_dims, **kwargs):
+        """
+
+        :param cond_dims: list of each condition inputs dimensions
+        :param kwargs: Necessary arguments
+        :return: A sequential feedforward block, first applying a Conv1D layer on inputs, then a Dense block with recall of conds at each layers
+        """
+        x_inputs = Input(shape=(self.input_dims,), name="input_" + self.name)
+
+        x = LSTM(units=self.input_dims, activation=self.activation, recurrent_activation="tanh",
+                 dropout=0.1, recurrent_dropout=0.05, return_sequences=False,
+                 name="LSTM_layer")(tf.expand_dims(x_inputs, axis=-1))
 
         cond_inputs = []
 

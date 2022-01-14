@@ -2,7 +2,7 @@ import os
 from tensorflow.keras.optimizers import Adam
 from src.loss_class import *
 
-class ModelParams():
+class VAEModelParams():
     """
     Class which will gather all parameters needed in the construction of each neural network block
     """
@@ -29,7 +29,7 @@ class ModelParams():
         self.leapae_dims=[self.latent_dims, self.context_dims]
 
 
-class TrainingParams():
+class VAETrainingParams():
     """
     Class wich will gather all needed parameters needed in the compilation of the TF Keras Model
     """
@@ -56,7 +56,7 @@ class VAE_params():
             os.makedirs(self.folder)
 
     def set_model_params(self, recall=True):
-        self.model_params = ModelParams()
+        self.model_params = VAEModelParams()
 
         if recall:
             print("Default values for model architecture are:")
@@ -64,7 +64,7 @@ class VAE_params():
                 print(key, " := ", value)
 
     def set_training_params(self, recall=True):
-        self.training_params = TrainingParams()
+        self.training_params = VAETrainingParams()
         if "lr" in self.training_params.__dict__.keys() and recall:
             print(
                 "Default parameters for training are a L2 loss with Adam optimizer with a learning rate of %1s" % self.training_params.lr)
