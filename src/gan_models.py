@@ -22,7 +22,7 @@ class GAN_Model(ABC):
         self.blocks=[]
 
 
-    def maketrainable(self, modelpart=['encoder'], boolean=True):
+    def maketrainable(self, modelpart=['generator'], boolean=True):
         for mpart in modelpart:
             print("Change trainable status of {} layers".format(mpart))
             assert(mpart in self.__dict__.keys())
@@ -33,8 +33,8 @@ class GAN_Model(ABC):
                 if (layer.name not in input_names):
                     layer.trainable = boolean
 
-        if mpart not in ["encoder", "decoder"]:
-            for block in ["encoder", "decoder"]:
+        if mpart not in ["generator", "discriminator"]:
+            for block in ["generator", "discriminator"]:
                 submodel_name = getattr(self, mpart).name
                 if submodel_name in [lay.name for lay in getattr(self, block).layers]:
                     input_names = getattr(self, block).get_layer(submodel_name).input_names
@@ -55,7 +55,7 @@ class GAN_Model(ABC):
     def build_model(self, *args, **kwargs):
         pass
 
-    def train(self, *args,  **kwargs):
+    def train(self, blocks_totrain = ["generator", "discriminator"], *args,  **kwargs):
 
         print("## START TRAINING ##")
 
