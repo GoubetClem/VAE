@@ -6,6 +6,6 @@ pandas
 scikit-learn
 scipy
 seaborn
-tensorflow==2.8.0
+tensorflow==2.7.1
 tqdm
 jupyter
