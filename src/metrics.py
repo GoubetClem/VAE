@@ -75,12 +75,12 @@ def disentanglement_quantification(x_reduced, factorMatrix, factorDesc, algorith
         importance_matrix_norm * np.log(importance_matrix_norm + 1e-10) / np.log(n_factors), axis=1)
     compactness_measures = 1 + np.sum(importance_matrix * np.log(importance_matrix + 1e-10) / np.log(z_dim), axis=0)
 
-    weighted_disentanglement = sum(
-        disentangled_measures * np.sum(importance_matrix_norm, axis=1) / np.sum(importance_matrix_norm))
+    weights_predictonefactor = np.max(importance_matrix_norm, axis=1) / np.sum(np.max(importance_matrix_norm, axis=1))
+    weighted_disentanglement = np.sum(disentangled_measures * weights_predictonefactor)
 
     final_evaluation['disentanglement'] = disentangled_measures.ravel()
     final_evaluation['compactness'] = compactness_measures.ravel()
-    final_evaluation['mean_disentanglement'] = weighted_disentanglement
+    final_evaluation['mean_disentanglement'] = weighted_disentanglement.ravel()
 
     return final_evaluation, importance_matrix
 
