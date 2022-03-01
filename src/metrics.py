@@ -1,5 +1,6 @@
 from sklearn.model_selection import cross_validate
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 def disentanglement_quantification(x_reduced, factorMatrix, factorDesc, algorithm='RandomForest', cv=3,
@@ -71,11 +72,14 @@ def disentanglement_quantification(x_reduced, factorMatrix, factorDesc, algorith
     importance_matrix = np.concatenate(
         [evaluation['importance_variable'][name].reshape(-1, 1) for name in factorDesc.keys()], axis=1)
     importance_matrix_norm = np.apply_along_axis(lambda x: x / np.sum(x), 1, importance_matrix)
+    
     disentangled_measures = 1 + np.sum(
-        importance_matrix_norm * np.log(importance_matrix_norm + 1e-10) / np.log(n_factors), axis=1)
-    compactness_measures = 1 + np.sum(importance_matrix * np.log(importance_matrix + 1e-10) / np.log(z_dim), axis=0)
+        importance_matrix_norm * np.log(importance_matrix_norm + 1e-10),
+        axis=1) / np.log(n_factors)
+    
+    compactness_measures = 1 + np.sum(importance_matrix * np.log(importance_matrix + 1e-10), axis=0) / np.log(z_dim)
 
-    weights_predictonefactor = np.max(importance_matrix_norm, axis=1) / np.sum(np.max(importance_matrix_norm, axis=1))
+    weights_predictonefactor = np.sum(importance_matrix, axis=1) / np.sum(importance_matrix)
     weighted_disentanglement = np.sum(disentangled_measures * weights_predictonefactor)
 
     final_evaluation['disentanglement'] = disentangled_measures.ravel()
@@ -91,8 +95,8 @@ def compute_mig(x_reduced, factorMatrix, factorDesc, batch=None):
 
     params:
     x_reduced -- array-like, array containing the coordinates of the representation
-    factorDesc -- dict, dict of conditions names and types
-    factorMatrix -- array-like, array containing conditions values for the representation (columns in the keys order of factorDesc)
+    factorDesc -- dict, dict of genertaive/explicative names and types
+    factorMatrix -- array-like, array explicative factors values for the representation (columns in the keys order of factorDesc)
     batch -- whether to compute the MIG on a sliced part of the latent representation
 
     :return: mig -- float, MIG average value across the factors
@@ -120,8 +124,8 @@ def compute_mig(x_reduced, factorMatrix, factorDesc, batch=None):
             m[:, j] = mutual_info_regression(latent, ys[:, j]).T
             entropy[j] = mutual_info_regression(ys[:, j].reshape(-1, 1), ys[:, j]).ravel()
 
-    sorted_m = np.sort(m, axis=0)[::-1]
-    mig = np.mean(np.divide(sorted_m[0, :] - sorted_m[1, :], entropy))
+    sorted_m = np.sort(m, axis=0)
+    mig = np.divide(sorted_m[-1, :] - sorted_m[-2, :], entropy)
 
     return mig
 
@@ -132,8 +136,8 @@ def compute_modularity(x_reduced, factorMatrix, factorDesc, batch=None):
 
     params:
     x_reduced -- array-like, array containing the coordinates of the representation
-    factorDesc -- dict, dict of conditions names and types
-    factorMatrix -- array-like, array containing conditions values for the representation (columns in the keys order of factorDesc)
+    factorDesc -- dict, dict of generative/explicative factors names and types
+    factorMatrix -- array-like, array containing explicative factors values for the representation (columns in the keys order of factorDesc)
     batch -- whether to compute the MIG on a sliced part of the latent representation
 
     :return: modularity -- float, modularity score for the representation
@@ -172,7 +176,7 @@ def evaluate_latent_code(x_reduced, factorMatrix, factorDesc, algorithm='RandomF
 
     params:
     x_reduced -- array-like, array containing the coordinates of the representation
-    factorDesc -- dict, dict of conditions names and types
+    factorDesc -- dict, dict of generative/causal factors names and types
     factorMatrix -- array-like, array containing conditions values for the representation (columns in the keys order of factorDesc)
     algorithm -- the kind of estimator to make predictions with
     cv -- int, cross-validation generator or an iterable. Determines the cross-validation splitting strategy.
@@ -189,9 +193,62 @@ def evaluate_latent_code(x_reduced, factorMatrix, factorDesc, algorithm='RandomF
     else:
         x = x_reduced
 
-    final_evaluation, importance_matrix = disentanglement_quantification(x, factorMatrix, factorDesc, cv=3,
+    final_evaluation, importance_matrix = disentanglement_quantification(x, factorMatrix, factorDesc,
+                                                                         algorithm=algorithm, cv=cv,
                                                                          normalize_information=normalize_information)
     final_evaluation['mig'] = compute_mig(x, factorMatrix, factorDesc)
     final_evaluation['modularity'] = compute_modularity(x, factorMatrix, factorDesc)
 
     return final_evaluation, importance_matrix
+
+
+def display_evaluation_latent_code(final_evaluation, z_dim, factorDesc):
+    """A proposition of barplots to display results of the computed disentanglement metrics
+
+    Args:
+        final_evaluation (dict): dict of computed metrics values
+        z_dim (int): number of latent dimensions
+        factorDesc (dict): dict of generative/explicative factors names and types
+    """
+    
+    if 'reconstruction_error' in final_evaluation.keys():
+        for k,v in final_evaluation['reconstruction_error'].item():
+            print(k, ' : ', v)
+
+    fig = plt.figure(dpi=100,figsize=(10,8))
+
+    plt.subplot(2, 3, 1)
+    fig.subplots_adjust(hspace=0.5)
+    plt.bar(factorDesc.keys(),final_evaluation['informativeness'])
+    plt.xlabel('factors')
+    plt.xticks(rotation=75)
+    plt.ylim(top=1)
+    for index,data in enumerate(final_evaluation['informativeness']):
+        plt.text(x=index - 0.5, y =data+0.01 , s="%.2f"%data , fontdict=dict(fontsize=10))
+    plt.title('Informativeness score : %.2f'%np.mean(final_evaluation['informativeness']))
+
+    plt.subplot(2, 3, 2)
+    plt.bar(np.arange(z_dim)+1, final_evaluation['disentanglement'])
+    plt.xlabel('latent variables')
+    plt.title('Disentanglement score : %.2f'%final_evaluation['mean_disentanglement']);
+
+    plt.subplot(2, 3, 3)
+    plt.bar(factorDesc.keys(),final_evaluation['compactness'])
+    plt.xlabel('factors')
+    plt.xticks(rotation=75)
+    plt.title('Compactness')
+    plt.tight_layout();
+    
+    plt.subplot(2, 3, 5)
+    plt.bar(np.arange(z_dim)+1,1-final_evaluation['modularity'])
+    plt.xlabel('latent variables')
+    plt.title('Modularity score : %.2f'%np.mean(1-final_evaluation['modularity']));
+    
+    plt.subplot(2, 3, 6)
+    plt.bar(factorDesc.keys(),final_evaluation['mig'])
+    plt.xlabel('factors')
+    plt.xticks(rotation=75)
+    plt.title('Mutual Information Gap (MIG) : %.2f'%np.mean(final_evaluation['mig']))
+    plt.tight_layout();
+    
+    plt.show()
