@@ -11,7 +11,7 @@ Main features:
 * Choices of architectures for encoder or decoder blocks
 * Various losses combination available
 * Metrics of disentanglement
-* Callback on the analysis of leanrt information in hidden layers of the model
+* Callback on the analysis of learnt information in hidden layers of the model
 
 # Licence information
 Copyright 2020 RTE(France)
