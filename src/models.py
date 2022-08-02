@@ -4,10 +4,11 @@ import json
 import copy
 import matplotlib.pyplot as plt
 
-from tensorflow.keras.layers import Lambda
+from tensorflow.keras.layers import Lambda, Layer, Dropout
+
 from src.reparametrize_functions import *
 from src.AE_blocks import *
-
+from src.AE_blocks import build_decoder_oldmodel, build_encoder_oldmodel, build_t2vencoder_model
 
 class AE_Model(ABC):
 
@@ -44,9 +45,10 @@ class AE_Model(ABC):
                         if (layer.name not in input_names):
                             layer.trainable = boolean
 
-        self.save()
+        #self.save()
         optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
-        self.model.compile(loss=self.VAE_params.training_params.loss.losses["recon_loss"],
+        if not self.VAE_params.model_params.is_oldCVAE:
+            self.model.compile(loss=self.VAE_params.training_params.loss.losses["recon_loss"],
                            optimizer=optimizer, experimental_run_tf_function=False)
 
         self.load_model(retrieve_model_architecture=False)
@@ -63,12 +65,12 @@ class AE_Model(ABC):
         if "validation_split" not in kwargs:
             kwargs["validation_split"] = 0.1
 
-        training_history = self.model.fit(*args, **kwargs)
+        self.training_history = self.model.fit(*args, **kwargs)
 
         print("## END TRAINING ##")
 
-        plt.plot(training_history.history['loss'])
-        plt.plot(training_history.history['val_loss'])
+        plt.plot(self.training_history.history['loss'])
+        plt.plot(self.training_history.history['val_loss'])
         plt.title('model loss')
         plt.ylabel('loss')
         plt.xlabel('epoch')
@@ -120,13 +122,12 @@ class AE_Model(ABC):
             filepath = os.path.join(folder, "%s" %(block))
             getattr(self, block).load_weights(filepath = filepath)
 
-
-class CVAE(AE_Model):
+class CVAEpond(AE_Model):
 
     def __init__(self, VAE_params):
         AE_Model.__init__(self, VAE_params = VAE_params)
 
-    def build_model(self, VAE_params, custom_encoder_model=None, custom_decoder_model=None):
+    def build_model(self, VAE_params, custom_encoder_model=None, custom_decoder_model=None, custom_timetovec_model = None):
         """
 
         :param VAE_params: VAE_params class, subclasses of parameters needed to build each layers of the autoencoders and training paramaters to be used in the compile function
@@ -148,16 +149,23 @@ class CVAE(AE_Model):
 
         if self.VAE_params.model_params.context_dims is not None:
             context_inputs = [Input(shape=(self.VAE_params.model_params.context_dims,), name="context_inputs")]
+        
         inputs = [x_inputs] + c_inputs + context_inputs
 
         # Setting the AE architecture
         if self.VAE_params.model_params.with_embedding:
-            self.cond_embedding = EmbeddingBlock_model(input_dims=self.VAE_params.model_params.cond_dims,
-                                                     emb_dims=self.VAE_params.model_params.emb_dims,
-                                                     activation="relu", name="cond_emb", has_BN=False)
+            self.cond_embedding = build_embedding_model(self, model_params=self.VAE_params.model_params)
 
+        if self.VAE_params.model_params.with_Time2Vec and custom_timetovec_model is not None: 
+            self.timetovec_model = custom_timetovec_model
+
+        elif self.VAE_params.model_params.with_Time2Vec and custom_timetovec_model is None: 
+            self.timetovec_model = build_time2vec_model(self, model_params=self.VAE_params.model_params)
+        
         if custom_encoder_model is not None:
             self.encoder = custom_encoder_model
+        elif self.VAE_params.model_params.with_Time2Vec :
+            self.encoder = build_t2vencoder_model(self, model_params=self.VAE_params.model_params)
         else:
             self.encoder = build_encoder_model(self, model_params=self.VAE_params.model_params)
 
@@ -167,9 +175,14 @@ class CVAE(AE_Model):
             self.decoder = build_decoder_model(self, model_params=self.VAE_params.model_params)
 
         # Model AE graph
-        #encoding
-        enc_outputs = self.encoder(inputs)
-
+        #time2vec
+        if self.VAE_params.model_params.with_Time2Vec:
+            t2v_outputs = self.timetovec_model(inputs)
+            #encoding
+            enc_outputs = self.encoder([t2v_outputs])
+        else:    
+            enc_outputs = self.encoder([inputs])
+            
         if (self.VAE_params.model_params.nb_latent_components == 1):
             dec_inputs = [enc_outputs] + c_inputs
         else:
@@ -205,9 +218,140 @@ class CVAE(AE_Model):
             self.cond_embedding.summary()
             self.blocks.append("cond_embedding")
 
+        if self.VAE_params.model_params.with_Time2Vec:
+            self.timetovec_model.summary()
+            self.blocks.append("timetovec_model")
+
         self.encoder.summary()
         self.blocks.append("encoder")
+        
+        self.decoder.summary()
+        self.blocks.append("decoder")
 
+        # Training objectives settings
+        optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
+        if len(list(self.VAE_params.training_params.loss.loss_weights.keys()))> 1:
+            pond_loss = self.VAE_params.training_params.loss._get_loss_function_with_key("pond_loss",**vae_args)
+            self.model.add_loss(self.VAE_params.training_params.loss._get_loss_function_pond(**vae_args))
+            #self.model.add_loss(pond_loss)
+            self.model.add_metric(pond_loss,aggregation='mean', name="pond_loss")
+            for key in self.VAE_params.training_params.loss.loss_weights.keys():
+                if key != "pond_loss":
+                    metric = self.VAE_params.training_params.loss._get_loss_function_with_key(key,**vae_args)
+                    self.model.add_loss(metric)
+                    self.model.add_metric(metric,aggregation='mean', name=key)
+
+        print("Losses and associated weight involved in the model: ")
+        [print(loss_key, " : ",
+               self.VAE_params.training_params.loss.loss_weights[loss_key]) for loss_key in self.VAE_params.training_params.loss.losses.keys()]
+
+        self.model.compile(loss=self.VAE_params.training_params.loss.losses["pond_loss"],
+                           loss_weights=self.VAE_params.training_params.loss.loss_weights["pond_loss"],
+                           optimizer=optimizer, experimental_run_tf_function=False)
+
+class CVAE(AE_Model):
+
+    def __init__(self, VAE_params):
+        AE_Model.__init__(self, VAE_params = VAE_params)
+
+    def build_model(self, VAE_params, custom_encoder_model=None, custom_decoder_model=None, custom_timetovec_model = None):
+        """
+
+        :param VAE_params: VAE_params class, subclasses of parameters needed to build each layers of the autoencoders and training paramaters to be used in the compile function
+        :param custom_encoder_model: TF Model, to be used as encoder model in the graph
+        :param custom_decoder_model: TF Model, to be used as decoder model in the graph
+        :return: build graph and compile model in the CVAE Class
+        """
+        self.VAE_params.model_params = VAE_params.model_params
+        if self.VAE_params.model_params.with_embedding :
+            assert(len(self.VAE_params.model_params.cond_dims) + 1 == len(self.VAE_params.model_params.emb_dims))
+
+        # getting the graph inputs
+        x_inputs = Input(shape=(self.VAE_params.model_params.input_dims,), name="x_inputs")
+        c_inputs = []
+        context_inputs = []
+
+        for i, c_dims in enumerate(self.VAE_params.model_params.cond_dims):
+            c_inputs.append(Input(shape=(c_dims,), name="cond_inputs_{}".format(i)))
+
+        if self.VAE_params.model_params.context_dims is not None:
+            context_inputs = [Input(shape=(self.VAE_params.model_params.context_dims,), name="context_inputs")]
+        
+        inputs = [x_inputs] + c_inputs + context_inputs
+
+        # Setting the AE architecture
+        if self.VAE_params.model_params.with_embedding:
+            self.cond_embedding = build_embedding_model(self, model_params=self.VAE_params.model_params)
+
+        if self.VAE_params.model_params.with_Time2Vec and custom_timetovec_model is not None: 
+            self.timetovec_model = custom_timetovec_model
+
+        elif self.VAE_params.model_params.with_Time2Vec and custom_timetovec_model is None: 
+            self.timetovec_model = build_time2vec_model(self, model_params=self.VAE_params.model_params)
+        
+        if custom_encoder_model is not None:
+            self.encoder = custom_encoder_model
+        elif self.VAE_params.model_params.with_Time2Vec :
+            self.encoder = build_t2vencoder_model(self, model_params=self.VAE_params.model_params)
+        else:
+            self.encoder = build_encoder_model(self, model_params=self.VAE_params.model_params)
+
+        if custom_decoder_model is not None:
+            self.decoder = custom_decoder_model
+        else:
+            self.decoder = build_decoder_model(self, model_params=self.VAE_params.model_params)
+
+        # Model AE graph
+        #time2vec
+        if self.VAE_params.model_params.with_Time2Vec:
+            t2v_outputs = self.timetovec_model(inputs)
+            #encoding
+            enc_outputs = self.encoder([t2v_outputs])
+        else:    
+            enc_outputs = self.encoder([inputs])
+            
+        if (self.VAE_params.model_params.nb_latent_components == 1):
+            dec_inputs = [enc_outputs] + c_inputs
+        else:
+            z = Lambda(eval(self.VAE_params.model_params.reparametrize), name="reparametrizing_layer")(enc_outputs)
+            dec_inputs = [z] + c_inputs
+
+        #decoding
+        dec_outputs = self.decoder(dec_inputs)
+
+        if self.VAE_params.model_params.nb_decoder_outputs == 1:
+            x_hat = dec_outputs
+        else:
+            x_hat = Lambda(eval(self.VAE_params.model_params.reparametrize), name="loglikelihood_layer")(dec_outputs)
+
+        self.model = Model(inputs=inputs, outputs=x_hat, name="cvae")
+
+        vae_args = dict(
+            latent_components=enc_outputs,
+            latent_sampling=dec_inputs[0],
+            cond_true=c_inputs,
+            y_true = x_inputs,
+            y_pred = x_hat,
+            dec_outputs = dec_outputs
+        )
+        if self.VAE_params.model_params.with_embedding:
+            vae_args.update(dict(embedding_outputs=self.cond_embedding(c_inputs)))
+
+
+        self.model.summary()
+        self.blocks.append("model")
+
+        if self.VAE_params.model_params.with_embedding:
+            self.cond_embedding.summary()
+            self.blocks.append("cond_embedding")
+
+        if self.VAE_params.model_params.with_Time2Vec:
+            self.timetovec_model.summary()
+            self.blocks.append("timetovec_model")
+
+        self.encoder.summary()
+        self.blocks.append("encoder")
+        
         self.decoder.summary()
         self.blocks.append("decoder")
 
@@ -225,6 +369,111 @@ class CVAE(AE_Model):
                            optimizer=optimizer, experimental_run_tf_function=False)
 
 
+class InteL_CVAE(AE_Model):
+    def __init__(self, VAE_params):
+        AE_Model.__init__(self, VAE_params = VAE_params)
+
+    def build_model(self, VAE_params, custom_encoder_model=None, custom_decoder_model=None):
+        """
+
+        :param VAE_params: VAE_params class, subclasses of parameters needed to build each layers of the autoencoders and training paramaters to be used in the compile function
+        :param custom_encoder_model: TF Model, to be used as encoder model in the graph
+        :param custom_decoder_model: TF Model, to be used as decoder model in the graph
+        :return: build graph and compile model in the CVAE Class
+        """
+
+        self.VAE_params.model_params = VAE_params.model_params
+        if self.VAE_params.model_params.with_embedding :
+            assert(len(self.VAE_params.model_params.cond_dims) + 1 == len(self.VAE_params.model_params.emb_dims))
+
+        # getting the graph inputs
+        x_inputs = Input(shape=(self.VAE_params.model_params.input_dims,), name="x_inputs")
+        c_inputs = []
+        context_inputs = []
+
+        for i, c_dims in enumerate(self.VAE_params.model_params.cond_dims):
+            c_inputs.append(Input(shape=(c_dims,), name="cond_inputs_{}".format(i)))
+        
+        if self.VAE_params.model_params.context_dims is not None:
+            context_inputs = [Input(shape=(self.VAE_params.model_params.context_dims,), name="context_inputs")]
+        inputs = [x_inputs] + c_inputs + context_inputs
+
+        # Setting the AE architecture
+        if self.VAE_params.model_params.with_embedding:
+            self.cond_embedding = EmbeddingBlock_model(input_dims=self.VAE_params.model_params.cond_dims,
+                                                     emb_dims=self.VAE_params.model_params.emb_dims,
+                                                     activation="relu", name="cond_emb", has_BN=False)
+
+        if custom_encoder_model is not None:
+            self.encoder = custom_encoder_model
+        else:
+            self.encoder = build_encoder_model(self, model_params=self.VAE_params.model_params)
+
+        if custom_decoder_model is not None:
+            self.decoder = custom_decoder_model
+        else:
+            self.decoder = build_decoder_model(self, model_params=self.VAE_params.model_params)
+
+        # Model AE graph
+        #encoding
+        enc_outputs = self.encoder(inputs)
+
+        if (self.VAE_params.model_params.nb_latent_components == 1):
+            dec_inputs = [enc_outputs] + c_inputs
+        else:
+            y = Lambda(eval(self.VAE_params.model_params.reparametrize), name="reparametrizing_layer")(enc_outputs)
+
+            z = Lambda(eval(self.VAE_params.model_params.intel_function), name="intermediate_layer")(y)
+
+            dec_inputs = [z] + c_inputs
+
+        #decoding
+        dec_outputs = self.decoder(dec_inputs)
+
+        if self.VAE_params.model_params.nb_decoder_outputs == 1:
+            x_hat = dec_outputs
+        else:
+            x_hat = Lambda(eval(self.VAE_params.model_params.reparametrize), name="loglikelihood_layer")(dec_outputs)
+
+        self.model = Model(inputs=inputs, outputs=x_hat, name="cvae")
+
+        vae_args = dict(
+            latent_components=enc_outputs,
+            latent_sampling=dec_inputs[0],
+            cond_true=c_inputs,
+            y_true = x_inputs,
+            y_pred = x_hat,
+            dec_outputs = dec_outputs
+        )
+        if self.VAE_params.model_params.with_embedding:
+            vae_args.update(dict(embedding_outputs=self.cond_embedding(c_inputs)))
+
+        self.model.summary()
+        self.blocks.append("model")
+
+        if self.VAE_params.model_params.with_embedding:
+            self.cond_embedding.summary()
+            self.blocks.append("cond_embedding")
+
+        self.encoder.summary()
+        self.blocks.append("encoder")
+
+        self.decoder.summary()
+        self.blocks.append("decoder")
+
+        # Training objectives settings
+        optimizer = self.VAE_params.training_params.optimizer(self.VAE_params.training_params.lr)
+        if len(list(self.VAE_params.training_params.loss.loss_weights.keys()))> 1:
+            self.model.add_loss(self.VAE_params.training_params.loss._get_loss_function(**vae_args))
+            self.model.add_metric(self.VAE_params.training_params.loss._get_loss_function(**vae_args), name='kl_loss', aggregation='mean')
+        print("Losses and associated weight involved in the model: ")
+        [print(loss_key, " : ",
+               self.VAE_params.training_params.loss.loss_weights[loss_key]) for loss_key in self.VAE_params.training_params.loss.losses.keys()]
+
+        self.model.compile(loss=self.VAE_params.training_params.loss.losses["recon_loss"],
+                           loss_weights=self.VAE_params.training_params.loss.loss_weights["recon_loss"],
+                           optimizer=optimizer, experimental_run_tf_function=False)
+        
 class GuidedCVAE(AE_Model):
 
     def __init__(self, VAE_params):

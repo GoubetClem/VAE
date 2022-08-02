@@ -1,30 +1,38 @@
 import os
 from tensorflow.keras.optimizers import Adam
 from src.loss_class import *
+from src.intel_functions import *
 
 class VAEModelParams():
     """
     Class which will gather all parameters needed in the construction of each neural network block
     """
     def __init__(self):
-        self.cond_dims = []
-        self.cond_insert = ['encoder', 'decoder']
+        
         self.with_embedding = False
+        self.with_Time2Vec = False
         self.emb_dims = []
+        self.kernel_initializer = "glorot_uniform"
+        self.bias_initializer = 'glorot_uniform'
         self.reparametrize = "GaussianSampling"
-
+        self.intel_function = 'scalar_binary'
         self.input_dims=48
         self.output_dims=48
+        self.t2v_dims = 12
         self.latent_dims = 4
         self.nb_latent_components = 2
         self.nb_encoder_ensemble = 1
-        self.encoder_dims = [48,48,24,12]
+        self.encoder_dims = [12,10,8,6]
         self.encoder_type = "NNBlockCond_model"
         self.nb_decoder_outputs = 1
         self.nb_decoder_ensemble = 1
-        self.decoder_dims = [12,24,48,48]
+        self.decoder_dims = [6,12,24,48]
+        self.latent_encoder_dims = [4, 3, 3, 4]
+        self.latent_mask = 0
         self.decoder_type = "InceptionBlock_model"
-
+        self.embedding_type = 'EmbeddingBlock_model'
+        self.cond_dims = []
+        self.cond_insert = {'encoder':[], 'decoder':[]}
         self.context_dims=None
         self.leapae_dims=[self.latent_dims, self.context_dims]
 

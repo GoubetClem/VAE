@@ -30,6 +30,10 @@ def build_mmd_loss(y_true, y_pred, latent_mu, latent_sampling):
     pq_kernel = kde(latent_mu, latent_sampling)
     return K.mean(q_kernel) + K.mean(p_kernel) - 2 * K.mean(pq_kernel)
 
+def build_entropy_loss(y_true, y_pred, z_hat):
+    entropy = -K.sum(tf.multiply(z_hat, tf.math.log(z_hat)/tf.cast(2., tf.float32)))
+    return tf.math.reduce_mean(entropy)
+
 
 def build_gram_matrix(s1, h):
     s1 = K.cast(s1, dtype='float64')
@@ -63,10 +67,12 @@ def Renyi_entropy(A, alpha):
 
 def build_mutualinfo_loss(y_true, y_pred, cond_true, latent_mu, sigma=3, alpha=1.01, kappa=10.):
 
-    if len(cond_true)>=2:
-        cond_in = K.concatenate(cond_true, axis=-1)
-    else:
-        cond_in = cond_true[0]
+    #if len(cond_true)>=2:
+    #   cond_in = K.concatenate(cond_true, axis=-1)
+    #else:
+    #   cond_in = cond_true[0]
+
+    cond_in = cond_true
 
     gram_x = build_gram_matrix(y_true, sigma)
     gram_c = build_gram_matrix(cond_in, sigma)
@@ -79,5 +85,6 @@ def build_mutualinfo_loss(y_true, y_pred, cond_true, latent_mu, sigma=3, alpha=1
     input_MI = Renyi_entropy(trace_normalize(gram_z), alpha) + \
                Renyi_entropy(trace_normalize(gram_x), alpha) -\
                Renyi_entropy(trace_normalize(gram_x * gram_z), alpha)
-
-    return K.cast(1. / kappa / input_MI + kappa * cond_MI, dtype='float32')
+               
+    #return K.cast(1. / kappa / input_MI + kappa * cond_MI, dtype='float32')
+    return K.cast(kappa * cond_MI, dtype='float32')

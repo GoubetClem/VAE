@@ -15,8 +15,8 @@ def disentanglement_quantification(x_reduced, factorMatrix, factorDesc, algorith
     cv -- int, cross-validation generator or an iterable. Determines the cross-validation splitting strategy.
     normalize_information -- Boolean, whether to normalize informativeness results with the minimum obtained with a random projection
 
-    :return: final_evaluation -- dict, dict of metrics values
-             importance_matrix -- array-like, importance matrix for latent dimensions (rows) to predict factors (columns)
+    return: final_evaluation -- dict, dict of metrics values
+            importance_matrix -- array-like, importance matrix for latent dimensions (rows) to predict factors (columns)
     """
     assert algorithm == 'RandomForest' or algorithm == 'GradientBoosting'
     if algorithm == 'RandomForest':

@@ -1,4 +1,5 @@
 from src.losses import *
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
 from tensorflow.keras.losses import MeanAbsoluteError, MeanSquaredError, BinaryCrossentropy
@@ -10,7 +11,7 @@ class VAELoss():
     """
 
     def __init__(self, loss_weights={"recon_loss": 1.}, recon_loss="mse", custom_loss=None,
-                 options={"prior_mu":0., "log_prior_sigma":0., "kl_annealing":0., "alpha":1.01, "scale":3., "kappa":10.}):
+                 options={"prior_mu":0., "log_prior_sigma":0., "kl_annealing":0., "alpha":1.01, "scale":3., "kappa":10., "sample_weight":1.}):
         """
 
         :param loss_weights: dict, {<str>:<float>} name and associated weight of the considered loss
@@ -43,6 +44,9 @@ class VAELoss():
         if "mutualinfo_loss" in loss_weights.keys():
             self.losses["mutualinfo_loss"] = build_mutualinfo_loss
 
+        if "entropy_loss" in loss_weights.keys():
+            self.losses["entropy_loss"] = build_entropy_loss
+
         if "loglikelihood" in loss_weights.keys():
             self.losses["loglikelihood"] = build_gaussian_loglikelihood
 
@@ -68,6 +72,12 @@ class VAELoss():
         dict_args_["mutualinfo_loss"] = {"cond_true": kwargs["cond_true"], "latent_mu": kwargs["latent_components"][0],
                                          "sigma":self.options["scale"], "alpha":self.options["alpha"],
                                          "kappa" : self.options["kappa"]}
+                                         
+        """dict_args_["mutualinfo_loss"] = {"cond_true": kwargs["cond_true"], "latent_mu": kwargs["x"],
+                                         "sigma":self.options["scale"], "alpha":self.options["alpha"],
+                                         "kappa" : self.options["kappa"]}"""
+
+        """dict_args_["entropy_loss"] = {"z_hat": kwargs["binary"]}"""
 
         dict_args_["loglikelihood"] = {"log_sigma" : kwargs["dec_outputs"][1]}
 
@@ -95,3 +105,51 @@ class VAELoss():
                 vae_loss += self.loss_weights[key] * loss_key(y_true=y_true, y_pred=y_pred, **this_kwargs)
 
         return vae_loss
+
+    def _get_loss_function_pond(self, y_true, y_pred, **kwargs):
+        """
+        DO NOT TOUCH THIS
+
+        """
+        dict_ = self.get_dict(**kwargs)
+        vae_loss = 0.
+        for key in self.losses.keys():
+            if key != "pond_loss":
+                this_kwargs = {}
+                if key in dict_:
+                    this_kwargs = dict_[key]
+                loss_key = self.losses[key]
+                vae_loss += self.loss_weights[key] * loss_key(y_true=y_true, y_pred=y_pred, **this_kwargs)
+
+        return vae_loss
+
+    def _get_loss_function_with_key(self, key_loss, y_true, y_pred, **kwargs):
+        """
+        DO NOT TOUCH THIS
+
+        """
+        dict_ = self.get_dict(**kwargs)
+        this_kwargs = {}
+        if key_loss in dict_:
+            this_kwargs = dict_[key_loss]
+        loss_key = self.losses[key_loss]
+        vae_loss = self.loss_weights[key_loss] * loss_key(y_true=y_true, y_pred=y_pred, **this_kwargs)
+
+        return vae_loss
+
+    def _get_loss_function2(self, y_true, y_pred, **kwargs):
+            """
+            DO NOT TOUCH THIS
+
+            """
+            vae_loss = []
+            dict_ = self.get_dict(**kwargs)
+            for key in self.losses.keys():
+                #if key != "recon_loss":
+                    this_kwargs = {}
+                    if key in dict_:
+                        this_kwargs = dict_[key]
+                    loss_key = self.losses[key]
+                    vae_loss.append(self.loss_weights[key] * loss_key(y_true=y_true, y_pred=y_pred, **this_kwargs))
+
+            return vae_loss
