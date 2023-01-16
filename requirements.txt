@@ -1,11 +1,11 @@
 
 matplotlib
 numpy
-opencv-python==4.2.0.32
+opencv-python
 pandas
 scikit-learn
 scipy
 seaborn
-tensorflow==2.8.0
+tensorflow
 tqdm
 jupyter
